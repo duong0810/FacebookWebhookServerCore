@@ -2,6 +2,8 @@
 using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Threading.Tasks;
+using Webhook_Message.Data;
+using Webhook_Message.Models;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -30,39 +32,45 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                // Đọc body request từ Facebook
                 using (var reader = new StreamReader(Request.Body))
                 {
                     var body = await reader.ReadToEndAsync();
                     var json = JObject.Parse(body);
-
-                    // Lấy thông tin tin nhắn (cấu trúc điển hình từ Facebook)
                     var entries = json["entry"];
-                    foreach (var entry in entries)
-                    {
-                        var changes = entry["changes"];
-                        if (changes != null)
-                        {
-                            foreach (var change in changes)
-                            {
-                                var value = change["value"];
-                                var message = value?["message"]?["text"]?.ToString();
-                                var senderId = value?["from"]?["id"]?.ToString();
 
-                                if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                    using (var db = new AppDbContext())
+                    {
+                        foreach (var entry in entries)
+                        {
+                            var changes = entry["changes"];
+                            if (changes != null)
+                            {
+                                foreach (var change in changes)
                                 {
-                                    // Tạm thời log (sau này lưu database)
-                                    System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
+                                    var value = change["value"];
+                                    var message = value?["message"]?["text"]?.ToString();
+                                    var senderId = value?["from"]?["id"]?.ToString();
+
+                                    if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                                    {
+                                        db.Messages.Add(new Message
+                                        {
+                                            SenderId = senderId,
+                                            Content = message,
+                                            Time = DateTime.Now
+                                        });
+                                        await db.SaveChangesAsync();
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                return Ok(); // Trả 200 OK
+                return Ok();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error processing message: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
                 return StatusCode(500, "Internal Server Error");
             }
         }
