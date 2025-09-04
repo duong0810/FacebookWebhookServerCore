@@ -1,0 +1,6 @@
+@Webhook_Message_HostAddress = http://localhost:5066
+
+GET {{Webhook_Message_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
