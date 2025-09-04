@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -8,40 +9,62 @@ namespace FacebookWebhookServerCore.Controllers
     [Route("api/[controller]")]
     public class WebhookController : ControllerBase
     {
-        private readonly string _verifyToken = "kosmosdevelopment"; // Thay bằng mã xác minh bạn nhập trên Meta
+        private readonly string _verifyToken = "kosmosdevelopment"; // Thay bằng mã xác minh của bạn
 
         [HttpGet]
         public IActionResult Get()
         {
-            // Lấy tham số từ query string
             string verifyToken = Request.Query["hub.verify_token"];
             string challenge = Request.Query["hub.challenge"];
             string mode = Request.Query["hub.mode"];
 
-            // Kiểm tra mode và token
             if (mode == "subscribe" && verifyToken == _verifyToken)
             {
-                // Trả về challenge để xác thực (plain text, không JSON)
-                return Content(challenge, "text/plain");
+                return Content(challenge, "text/plain"); // Trả challenge để xác thực
             }
-
-            // Nếu không khớp, trả lỗi
-            return BadRequest("Verify token mismatch");
+            return BadRequest("Verify token mismatch lê minh đương");
         }
 
         [HttpPost]
         public async Task<IActionResult> Post()
         {
-            // Đọc body request từ Facebook (JSON tin nhắn)
-            using (var reader = new StreamReader(Request.Body))
+            try
             {
-                var body = await reader.ReadToEndAsync();
-                // Tạm thời log (sau này lưu database hoặc gửi đến Windows Forms)
-                System.Diagnostics.Debug.WriteLine("Received: " + body);
-            }
+                // Đọc body request từ Facebook
+                using (var reader = new StreamReader(Request.Body))
+                {
+                    var body = await reader.ReadToEndAsync();
+                    var json = JObject.Parse(body);
 
-            // Trả 200 OK để Facebook biết đã nhận
-            return Ok();
+                    // Lấy thông tin tin nhắn (cấu trúc điển hình từ Facebook)
+                    var entries = json["entry"];
+                    foreach (var entry in entries)
+                    {
+                        var changes = entry["changes"];
+                        if (changes != null)
+                        {
+                            foreach (var change in changes)
+                            {
+                                var value = change["value"];
+                                var message = value?["message"]?["text"]?.ToString();
+                                var senderId = value?["from"]?["id"]?.ToString();
+
+                                if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                                {
+                                    // Tạm thời log (sau này lưu database)
+                                    System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
+                                }
+                            }
+                        }
+                    }
+                }
+                return Ok(); // Trả 200 OK
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error processing message: {ex.Message}");
+                return StatusCode(500, "Internal Server Error");
+            }
         }
     }
 }
