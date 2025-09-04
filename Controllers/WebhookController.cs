@@ -30,40 +30,51 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
+                // Đảm bảo stream có thể đọc
+                Request.EnableBuffering();
                 string body;
                 using (var reader = new StreamReader(Request.Body))
                 {
                     body = await reader.ReadToEndAsync();
                 }
+                Request.Body.Position = 0; // Reset stream
+
                 System.Diagnostics.Debug.WriteLine($"Raw body: {body}");
 
-                var json = JObject.Parse(body);
-                var entries = json["entry"];
-
-                foreach (var entry in entries)
+                if (!string.IsNullOrEmpty(body))
                 {
-                    var changes = entry["changes"];
-                    if (changes != null)
-                    {
-                        foreach (var change in changes)
-                        {
-                            var value = change["value"];
-                            var message = value?["message"]?["text"]?.ToString();
-                            var senderId = value?["from"]?["id"]?.ToString();
+                    var json = JObject.Parse(body);
+                    var entries = json["entry"];
 
-                            if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                    foreach (var entry in entries)
+                    {
+                        var changes = entry["changes"];
+                        if (changes != null)
+                        {
+                            foreach (var change in changes)
                             {
-                                System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
+                                var value = change["value"];
+                                var message = value?["message"]?["text"]?.ToString();
+                                var senderId = value?["from"]?["id"]?.ToString();
+
+                                if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
+                                }
                             }
                         }
                     }
                 }
-                return Ok();
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("Body is empty");
+                }
+                return Ok(new { status = "success", receivedBody = body ?? "No data" }); // Trả về body
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
-                return StatusCode(500, "Internal Server Error");
+                return StatusCode(500, new { error = ex.Message });
             }
         }
     }
