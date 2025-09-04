@@ -79,6 +79,7 @@ namespace FacebookWebhookServerCore.Controllers
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"StackTrace: {ex.StackTrace}");
                 return StatusCode(500, "Internal Server Error");
             }
         }
