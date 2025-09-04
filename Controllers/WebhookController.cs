@@ -35,39 +35,46 @@ namespace FacebookWebhookServerCore.Controllers
                 using (var reader = new StreamReader(Request.Body))
                 {
                     var body = await reader.ReadToEndAsync();
-                    System.Diagnostics.Debug.WriteLine($"Payload: {body}"); // Log payload
+                    System.Diagnostics.Debug.WriteLine($"Payload: {body}"); // Log payload để kiểm tra
+
                     var json = JObject.Parse(body);
                     var entries = json["entry"];
 
-                    using (var db = new AppDbContext())
+                    if (entries != null)
                     {
-                        foreach (var entry in entries)
+                        using (var db = new AppDbContext())
                         {
-                            var changes = entry["changes"];
-                            if (changes != null)
+                            foreach (var entry in entries)
                             {
-                                foreach (var change in changes)
+                                var messaging = entry["messaging"];
+                                if (messaging != null)
                                 {
-                                    var value = change["value"];
-                                    var message = value?["message"]?["text"]?.ToString();
-                                    var senderId = value?["from"]?["id"]?.ToString();
-
-                                    if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                                    foreach (var messageEvent in messaging)
                                     {
-                                        db.Messages.Add(new Message
+                                        var senderId = messageEvent["sender"]?["id"]?.ToString();
+                                        var messageText = messageEvent["message"]?["text"]?.ToString();
+
+                                        if (!string.IsNullOrEmpty(senderId) && !string.IsNullOrEmpty(messageText))
                                         {
-                                            SenderId = senderId,
-                                            Content = message,
-                                            Time = DateTime.Now
-                                        });
-                                        await db.SaveChangesAsync();
+                                            // Lưu tin nhắn vào cơ sở dữ liệu
+                                            db.Messages.Add(new Message
+                                            {
+                                                SenderId = senderId,
+                                                Content = messageText,
+                                                Time = DateTime.Now
+                                            });
+                                            await db.SaveChangesAsync();
+
+                                            // Log thông tin tin nhắn
+                                            System.Diagnostics.Debug.WriteLine($"Sender ID: {senderId}, Message: {messageText}");
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-                return Ok();
+                return Ok(); // Trả về 200 OK
             }
             catch (Exception ex)
             {
