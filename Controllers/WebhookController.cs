@@ -14,13 +14,13 @@ namespace FacebookWebhookServerCore.Controllers
         [HttpGet]
         public IActionResult Get()
         {
-            string? verifyToken = Request.Query["hub.verify_token"];
-            string? challenge = Request.Query["hub.challenge"];
-            string? mode = Request.Query["hub.mode"];
+            string verifyToken = Request.Query["hub.verify_token"];
+            string challenge = Request.Query["hub.challenge"];
+            string mode = Request.Query["hub.mode"];
 
             if (mode == "subscribe" && verifyToken == _verifyToken)
             {
-                return Content(challenge ?? string.Empty, "text/plain");
+                return Content(challenge, "text/plain");
             }
             return BadRequest("Verify token mismatch");
         }
@@ -30,30 +30,30 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
+                string body;
                 using (var reader = new StreamReader(Request.Body))
                 {
-                    var body = await reader.ReadToEndAsync();
-                    var json = JObject.Parse(body);
-                    var entries = json["entry"];
+                    body = await reader.ReadToEndAsync();
+                }
+                System.Diagnostics.Debug.WriteLine($"Raw body: {body}");
 
-                    if (entries != null)
+                var json = JObject.Parse(body);
+                var entries = json["entry"];
+
+                foreach (var entry in entries)
+                {
+                    var changes = entry["changes"];
+                    if (changes != null)
                     {
-                        foreach (var entry in entries)
+                        foreach (var change in changes)
                         {
-                            var changes = entry["changes"];
-                            if (changes != null)
-                            {
-                                foreach (var change in changes)
-                                {
-                                    var value = change["value"];
-                                    var message = value?["message"]?["text"]?.ToString();
-                                    var senderId = value?["from"]?["id"]?.ToString();
+                            var value = change["value"];
+                            var message = value?["message"]?["text"]?.ToString();
+                            var senderId = value?["from"]?["id"]?.ToString();
 
-                                    if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
-                                    {
-                                        System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
-                                    }
-                                }
+                            if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
                             }
                         }
                     }
