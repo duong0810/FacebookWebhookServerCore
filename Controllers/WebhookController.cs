@@ -30,51 +30,67 @@ namespace FacebookWebhookServerCore.Controllers
         [HttpPost]
         public async Task<IActionResult> Post()
         {
+            System.Diagnostics.Debug.WriteLine("Post method started."); // Log bắt đầu phương thức
+
             try
             {
                 using (var reader = new StreamReader(Request.Body))
                 {
                     var body = await reader.ReadToEndAsync();
-                    System.Diagnostics.Debug.WriteLine($"Payload: {body}"); // Log payload để kiểm tra
+                    System.Diagnostics.Debug.WriteLine($"Payload: {body}"); // Log payload
+
+                    if (string.IsNullOrEmpty(body))
+                    {
+                        System.Diagnostics.Debug.WriteLine("Request body is empty.");
+                        return BadRequest("Invalid JSON payload.");
+                    }
 
                     var json = JObject.Parse(body);
                     var entries = json["entry"];
 
-                    if (entries != null)
+                    if (entries == null)
                     {
-                        using (var db = new AppDbContext())
+                        System.Diagnostics.Debug.WriteLine("Entries not found in JSON.");
+                        return BadRequest("Invalid JSON structure.");
+                    }
+
+                    using (var db = new AppDbContext())
+                    {
+                        foreach (var entry in entries)
                         {
-                            foreach (var entry in entries)
+                            var messaging = entry["messaging"];
+                            if (messaging == null)
                             {
-                                var messaging = entry["messaging"];
-                                if (messaging != null)
+                                System.Diagnostics.Debug.WriteLine("Messaging not found in entry.");
+                                continue;
+                            }
+
+                            foreach (var messageEvent in messaging)
+                            {
+                                var senderId = messageEvent["sender"]?["id"]?.ToString();
+                                var messageText = messageEvent["message"]?["text"]?.ToString();
+
+                                if (string.IsNullOrEmpty(senderId) || string.IsNullOrEmpty(messageText))
                                 {
-                                    foreach (var messageEvent in messaging)
-                                    {
-                                        var senderId = messageEvent["sender"]?["id"]?.ToString();
-                                        var messageText = messageEvent["message"]?["text"]?.ToString();
-
-                                        if (!string.IsNullOrEmpty(senderId) && !string.IsNullOrEmpty(messageText))
-                                        {
-                                            // Lưu tin nhắn vào cơ sở dữ liệu
-                                            db.Messages.Add(new Message
-                                            {
-                                                SenderId = senderId,
-                                                Content = messageText,
-                                                Time = DateTime.Now
-                                            });
-                                            await db.SaveChangesAsync();
-
-                                            // Log thông tin tin nhắn
-                                            System.Diagnostics.Debug.WriteLine($"Sender ID: {senderId}, Message: {messageText}");
-                                        }
-                                    }
+                                    System.Diagnostics.Debug.WriteLine("SenderId or MessageText is null or empty.");
+                                    continue;
                                 }
+
+                                System.Diagnostics.Debug.WriteLine($"Sender ID: {senderId}, Message: {messageText}");
+
+                                db.Messages.Add(new Message
+                                {
+                                    SenderId = senderId,
+                                    Content = messageText,
+                                    Time = DateTime.Now
+                                });
+                                await db.SaveChangesAsync();
                             }
                         }
                     }
                 }
-                return Ok(); // Trả về 200 OK
+                System.Diagnostics.Debug.WriteLine("Post method completed successfully.");
+                return Ok();
             }
             catch (Exception ex)
             {
