@@ -24,7 +24,7 @@ namespace FacebookWebhookServerCore.Controllers
             {
                 return Content(challenge, "text/plain"); // Trả challenge để xác thực
             }
-            return BadRequest("Verify token mismatch lê minh đương");
+            return BadRequest("Verify token mismatch");
         }
 
         [HttpPost]
