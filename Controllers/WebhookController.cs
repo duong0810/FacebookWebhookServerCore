@@ -7,16 +7,21 @@ namespace Webhook_Message.Controllers
     public class WebhookController : ControllerBase
     {
         [HttpGet]
-        public IActionResult Get()
+        public IActionResult Get([FromQuery] string hub_mode, [FromQuery] string hub_challenge, [FromQuery] string hub_verify_token)
         {
-            // Tạm thời chỉ trả 200 OK để test deploy
-            return Ok("Webhook is running");
+            // Xác minh token do Facebook gửi
+            const string verifyToken = "kosmosdevelopment"; // Thay bằng token bạn đã cấu hình trên Facebook Developer
+            if (hub_mode == "subscribe" && hub_verify_token == verifyToken)
+            {
+                return Ok(hub_challenge); // Trả về mã xác minh
+            }
+            return Unauthorized();
         }
 
         [HttpPost]
-        public IActionResult Post()
+        public IActionResult Post([FromBody] object payload)
         {
-            // Tạm thời chỉ nhận request để test
+            // Xử lý payload từ Facebook
             return Ok();
         }
     }
