@@ -1,45 +1,46 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.IO;
+using System.Threading.Tasks;
 
-namespace Webhook_Message.Controllers
+namespace FacebookWebhookServerCore.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class WebhookController : ControllerBase
     {
+        private readonly string _verifyToken = "kosmosdevelopment"; // Thay bằng mã xác minh bạn nhập trên Meta
+
         [HttpGet]
-        public IActionResult Get([FromQuery] string hub_mode, [FromQuery] string hub_challenge, [FromQuery] string hub_verify_token)
+        public IActionResult Get()
         {
-            // Xác minh token do Facebook gửi
-            const string verifyToken = "kosmosdevelopment"; // Thay bằng token bạn đã cấu hình trên Facebook Developer
-            if (hub_mode == "subscribe" && hub_verify_token == verifyToken)
+            // Lấy tham số từ query string
+            string verifyToken = Request.Query["hub.verify_token"];
+            string challenge = Request.Query["hub.challenge"];
+            string mode = Request.Query["hub.mode"];
+
+            // Kiểm tra mode và token
+            if (mode == "subscribe" && verifyToken == _verifyToken)
             {
-                return Ok(hub_challenge); // Trả về mã xác minh
+                // Trả về challenge để xác thực (plain text, không JSON)
+                return Content(challenge, "text/plain");
             }
-            return Unauthorized();
+
+            // Nếu không khớp, trả lỗi
+            return BadRequest("Verify token mismatch");
         }
 
         [HttpPost]
-        public IActionResult Post([FromBody] dynamic payload)
+        public async Task<IActionResult> Post()
         {
-            // Log payload để kiểm tra nội dung
-            Console.WriteLine(payload);
-
-            // Xử lý sự kiện tin nhắn
-            if (payload.entry != null)
+            // Đọc body request từ Facebook (JSON tin nhắn)
+            using (var reader = new StreamReader(Request.Body))
             {
-                foreach (var entry in payload.entry)
-                {
-                    foreach (var messaging in entry.messaging)
-                    {
-                        var senderId = messaging.sender.id;
-                        var messageText = messaging.message?.text;
-
-                        // Xử lý tin nhắn từ người dùng
-                        Console.WriteLine($"Sender ID: {senderId}, Message: {messageText}");
-                    }
-                }
+                var body = await reader.ReadToEndAsync();
+                // Tạm thời log (sau này lưu database hoặc gửi đến Windows Forms)
+                System.Diagnostics.Debug.WriteLine("Received: " + body);
             }
 
+            // Trả 200 OK để Facebook biết đã nhận
             return Ok();
         }
     }
