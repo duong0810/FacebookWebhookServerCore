@@ -19,9 +19,27 @@ namespace Webhook_Message.Controllers
         }
 
         [HttpPost]
-        public IActionResult Post([FromBody] object payload)
+        public IActionResult Post([FromBody] dynamic payload)
         {
-            // Xử lý payload từ Facebook
+            // Log payload để kiểm tra nội dung
+            Console.WriteLine(payload);
+
+            // Xử lý sự kiện tin nhắn
+            if (payload.entry != null)
+            {
+                foreach (var entry in payload.entry)
+                {
+                    foreach (var messaging in entry.messaging)
+                    {
+                        var senderId = messaging.sender.id;
+                        var messageText = messaging.message?.text;
+
+                        // Xử lý tin nhắn từ người dùng
+                        Console.WriteLine($"Sender ID: {senderId}, Message: {messageText}");
+                    }
+                }
+            }
+
             return Ok();
         }
     }
