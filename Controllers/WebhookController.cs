@@ -34,6 +34,12 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
+                if (Request.Body == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("Request body is null.");
+                    return BadRequest("Request body is null.");
+                }
+
                 using (var reader = new StreamReader(Request.Body))
                 {
                     var body = await reader.ReadToEndAsync();
@@ -45,9 +51,18 @@ namespace FacebookWebhookServerCore.Controllers
                         return BadRequest("Invalid JSON payload.");
                     }
 
-                    var json = JObject.Parse(body);
-                    var entries = json["entry"];
+                    JObject json;
+                    try
+                    {
+                        json = JObject.Parse(body);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Invalid JSON: {ex.Message}");
+                        return BadRequest("Invalid JSON format.");
+                    }
 
+                    var entries = json["entry"];
                     if (entries == null)
                     {
                         System.Diagnostics.Debug.WriteLine("Entries not found in JSON.");
@@ -67,8 +82,8 @@ namespace FacebookWebhookServerCore.Controllers
 
                             foreach (var messageEvent in messaging)
                             {
-                                var senderId = messageEvent["sender"]?["id"]?.ToString();
-                                var messageText = messageEvent["message"]?["text"]?.ToString();
+                                var senderId = messageEvent["sender"]?["id"]?.ToString() ?? string.Empty;
+                                var messageText = messageEvent["message"]?["text"]?.ToString() ?? string.Empty;
 
                                 if (string.IsNullOrEmpty(senderId) || string.IsNullOrEmpty(messageText))
                                 {
