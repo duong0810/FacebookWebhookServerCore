@@ -35,6 +35,7 @@ namespace FacebookWebhookServerCore.Controllers
                 using (var reader = new StreamReader(Request.Body))
                 {
                     var body = await reader.ReadToEndAsync();
+                    System.Diagnostics.Debug.WriteLine($"Payload: {body}"); // Log payload
                     var json = JObject.Parse(body);
                     var entries = json["entry"];
 
