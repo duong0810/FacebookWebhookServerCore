@@ -5,6 +5,15 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Cấu hình Kestrel trước khi build (nếu cần tùy chỉnh port hoặc HTTPS)
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // Đặt port (Render tự động gán port, nên để mặc định hoặc dùng biến môi trường)
+    options.ListenAnyIP(int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "5000"));
+    // Nếu cần HTTPS thủ công (Render tự cung cấp HTTPS, nên bỏ qua phần này)
+    // options.ListenAnyIP(5000, listenOptions => listenOptions.UseHttps("path/to/cert.pfx", "password"));
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -14,16 +23,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection(); // Bắt buộc HTTPS
+app.UseHttpsRedirection(); // Render tự cung cấp HTTPS, giữ middleware này
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
-
-// Cấu hình để Render tự xử lý HTTPS
-builder.WebHost.ConfigureKestrel(options =>
-{
-    // Render tự động cung cấp HTTPS, không cần cấu hình thủ công certificate
-    options.ListenAnyIP(5000); // Port mặc định của Render
-});
 
 app.Run();
