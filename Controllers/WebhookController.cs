@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Threading.Tasks;
@@ -18,11 +19,16 @@ namespace FacebookWebhookServerCore.Controllers
             string challenge = Request.Query["hub.challenge"];
             string mode = Request.Query["hub.mode"];
 
+            if (string.IsNullOrEmpty(mode) || string.IsNullOrEmpty(verifyToken) || string.IsNullOrEmpty(challenge))
+            {
+                return BadRequest("Missing required parameters");
+            }
+
             if (mode == "subscribe" && verifyToken == _verifyToken)
             {
                 return Content(challenge, "text/plain");
             }
-            return BadRequest("Verify token mismatch");
+            return BadRequest("Verify token mismatch (không khớp)");
         }
 
         [HttpPost]
@@ -30,30 +36,37 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                // Đảm bảo stream có thể đọc
+                // Đọc toàn bộ nội dung yêu cầu và lưu vào biến
                 Request.EnableBuffering();
                 string body;
-                using (var reader = new StreamReader(Request.Body))
+                using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true))
                 {
                     body = await reader.ReadToEndAsync();
                 }
-                Request.Body.Position = 0; // Reset stream
+                Request.Body.Position = 0; // Reset stream để tránh lỗi nếu cần đọc lại
 
                 System.Diagnostics.Debug.WriteLine($"Raw body: {body}");
 
-                if (!string.IsNullOrEmpty(body))
+                if (string.IsNullOrEmpty(body))
                 {
-                    var json = JObject.Parse(body);
-                    var entries = json["entry"];
+                    System.Diagnostics.Debug.WriteLine("Body is empty");
+                    return Ok(new { status = "success", receivedBody = "No data" });
+                }
 
+                // Phân tích JSON một cách an toàn
+                var json = JObject.Parse(body);
+                var entries = json["entry"] as JArray;
+
+                if (entries != null)
+                {
                     foreach (var entry in entries)
                     {
-                        var changes = entry["changes"];
+                        var changes = entry["changes"] as JArray;
                         if (changes != null)
                         {
                             foreach (var change in changes)
                             {
-                                var value = change["value"];
+                                var value = change["value"] as JObject;
                                 var message = value?["message"]?["text"]?.ToString();
                                 var senderId = value?["from"]?["id"]?.ToString();
 
@@ -65,11 +78,13 @@ namespace FacebookWebhookServerCore.Controllers
                         }
                     }
                 }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("Body is empty");
-                }
-                return Ok(new { status = "success", receivedBody = body ?? "No data" }); // Trả về body
+
+                return Ok(new { status = "success", receivedBody = body });
+            }
+            catch (JsonReaderException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"JSON Parse Error: {ex.Message}");
+                return StatusCode(400, new { error = "Invalid JSON format" });
             }
             catch (Exception ex)
             {
