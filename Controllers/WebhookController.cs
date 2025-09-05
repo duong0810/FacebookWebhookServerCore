@@ -10,7 +10,7 @@ namespace FacebookWebhookServerCore.Controllers
     [Route("api/[controller]")]
     public class WebhookController : ControllerBase
     {
-        private readonly string _verifyToken = "kosmosdevelopment"; // Thay bằng mã của bạn
+        private readonly string _verifyToken = "kosmosdevelopment";
 
         [HttpGet]
         public IActionResult Get()
@@ -28,7 +28,7 @@ namespace FacebookWebhookServerCore.Controllers
             {
                 return Content(challenge, "text/plain");
             }
-            return BadRequest("Verify token mismatch (không khớp)");
+            return BadRequest("Verify token mismatch");
         }
 
         [HttpPost]
@@ -36,14 +36,14 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                // Đọc toàn bộ nội dung yêu cầu và lưu vào biến
-                Request.EnableBuffering();
+                // Đọc body một lần và lưu vào biến
                 string body;
-                using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true))
+                Request.EnableBuffering();
+                using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, leaveOpen: true))
                 {
                     body = await reader.ReadToEndAsync();
                 }
-                Request.Body.Position = 0; // Reset stream để tránh lỗi nếu cần đọc lại
+                // Không cần đặt lại Position nếu chỉ đọc một lần
 
                 System.Diagnostics.Debug.WriteLine($"Raw body: {body}");
 
@@ -53,7 +53,7 @@ namespace FacebookWebhookServerCore.Controllers
                     return Ok(new { status = "success", receivedBody = "No data" });
                 }
 
-                // Phân tích JSON một cách an toàn
+                // Phân tích JSON an toàn
                 var json = JObject.Parse(body);
                 var entries = json["entry"] as JArray;
 
@@ -61,18 +61,18 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     foreach (var entry in entries)
                     {
-                        var changes = entry["changes"] as JArray;
-                        if (changes != null)
+                        var messaging = entry["messaging"] as JArray; // Thay changes bằng messaging nếu dùng messaging
+                        if (messaging != null)
                         {
-                            foreach (var change in changes)
+                            foreach (var message in messaging)
                             {
-                                var value = change["value"] as JObject;
-                                var message = value?["message"]?["text"]?.ToString();
-                                var senderId = value?["from"]?["id"]?.ToString();
+                                var value = message as JObject;
+                                var msgText = value?["message"]?["text"]?.ToString();
+                                var senderId = value?["sender"]?["id"]?.ToString();
 
-                                if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(senderId))
+                                if (!string.IsNullOrEmpty(msgText) && !string.IsNullOrEmpty(senderId))
                                 {
-                                    System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {message}");
+                                    System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {msgText}");
                                 }
                             }
                         }

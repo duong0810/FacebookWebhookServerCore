@@ -14,17 +14,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection(); // Bắt buộc HTTPS cho webhook
+app.UseHttpsRedirection(); // Bắt buộc HTTPS
+app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
 
-// Cấu hình Kestrel để sử dụng HTTPS (thay đường dẫn và mật khẩu chứng chỉ)
+// Cấu hình để Render tự xử lý HTTPS
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenAnyIP(5001, listenOptions =>
-    {
-        listenOptions.UseHttps("path/to/your/certificate.pfx", "your-password");
-    });
+    // Render tự động cung cấp HTTPS, không cần cấu hình thủ công certificate
+    options.ListenAnyIP(5000); // Port mặc định của Render
 });
 
 app.Run();
