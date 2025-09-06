@@ -1,90 +1,65 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.IO;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace FacebookWebhookServerCore.Controllers
+[ApiController]
+[Route("api/[controller]")]
+public class SendMessageController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class WebhookController : ControllerBase
+    private readonly ILogger<SendMessageController> _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly string _pageAccessToken = "YOUR_PAGE_ACCESS_TOKEN"; // Thay bằng token thực tế, tốt nhất lưu trong biến môi trường
+
+    public SendMessageController(ILogger<SendMessageController> logger, IHttpClientFactory httpClientFactory)
     {
-        private readonly ILogger<WebhookController> _logger;
-        private readonly string _verifyToken = "kosmosdevelopment";
+        _logger = logger;
+        _httpClientFactory = httpClientFactory;
+    }
 
-        public WebhookController(ILogger<WebhookController> logger)
+    [HttpPost("send")]
+    public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
+    {
+        if (string.IsNullOrEmpty(request.UserId) || string.IsNullOrEmpty(request.MessageText))
         {
-            _logger = logger;
+            return BadRequest("UserId and MessageText are required.");
         }
 
-        [HttpGet]
-        public IActionResult Get()
+        var payload = new
         {
-            string verifyToken = Request.Query["hub.verify_token"];
-            string challenge = Request.Query["hub.challenge"];
-            string mode = Request.Query["hub.mode"];
+            messaging_type = "RESPONSE", // Sử dụng "MESSAGE_TAG" nếu ngoài 24 giờ với tag hợp lệ
+            recipient = new { id = request.UserId },
+            message = new { text = request.MessageText }
+        };
 
-            if (string.IsNullOrEmpty(mode) || string.IsNullOrEmpty(verifyToken) || string.IsNullOrEmpty(challenge))
-            {
-                _logger.LogWarning("Missing required parameters in GET request");
-                return BadRequest("Missing required parameters");
-            }
+        var content = new StringContent(
+            JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json"
+        );
 
-            if (mode == "subscribe" && verifyToken == _verifyToken)
-            {
-                _logger.LogInformation("Webhook verified successfully with challenge: {Challenge}", challenge);
-                return Content(challenge, "text/plain");
-            }
-            _logger.LogWarning("Verify token mismatch: {VerifyToken}", verifyToken);
-            return BadRequest("Verify token mismatch");
+        var url = $"https://graph.facebook.com/v20.0/me/messages?access_token={_pageAccessToken}";
+        var httpClient = _httpClientFactory.CreateClient();
+        var response = await httpClient.PostAsync(url, content);
+
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Message sent successfully to {UserId}", request.UserId);
+            return Ok(new { status = "success" });
         }
-
-        [HttpPost]
-        public async Task<IActionResult> Post()
+        else
         {
-            try
-            {
-                string body;
-                Request.EnableBuffering();
-                using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, leaveOpen: true))
-                {
-                    body = await reader.ReadToEndAsync();
-                }
-
-                _logger.LogInformation("Received raw body: {Body}", body);
-
-                if (string.IsNullOrEmpty(body))
-                {
-                    _logger.LogWarning("Received empty body");
-                    return Ok(new { status = "success", receivedBody = "No data" });
-                }
-
-                var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-                var parsedBody = JsonSerializer.Deserialize<object>(body); // Parse raw
-                var response = new
-                {
-                    status = "success",
-                    receivedBody = parsedBody
-                };
-                // Serialize toàn bộ response với định dạng đẹp
-                return new ContentResult
-                {
-                    Content = JsonSerializer.Serialize(response, jsonOptions),
-                    ContentType = "application/json",
-                    StatusCode = 200
-                };
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "JSON Parse Error");
-                return StatusCode(400, new { error = "Invalid JSON format" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing webhook");
-                return StatusCode(500, new { error = ex.Message });
-            }
+            var error = await response.Content.ReadAsStringAsync();
+            _logger.LogError("Failed to send message to {UserId}: {Error}", request.UserId, error);
+            return StatusCode((int)response.StatusCode, new { error = error });
         }
     }
+}
+
+public class SendMessageRequest
+{
+    public string UserId { get; set; }
+    public string MessageText { get; set; }
 }
