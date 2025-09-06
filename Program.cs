@@ -4,6 +4,13 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Thêm logging
+builder.Services.AddLogging(logging =>
+{
+    logging.AddConsole(); // Ghi log ra console (Render sẽ hiển thị)
+    logging.AddDebug();  // Tùy chọn, nếu cần debug cục bộ
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -12,7 +19,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Loại bỏ app.UseHttpsRedirection() vì Render tự xử lý HTTPS
+// Loại bỏ UseHttpsRedirection nếu Render tự xử lý HTTPS
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();

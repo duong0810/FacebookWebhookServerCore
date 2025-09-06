@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.IO;
@@ -10,7 +11,13 @@ namespace FacebookWebhookServerCore.Controllers
     [Route("api/[controller]")]
     public class WebhookController : ControllerBase
     {
+        private readonly ILogger<WebhookController> _logger;
         private readonly string _verifyToken = "kosmosdevelopment";
+
+        public WebhookController(ILogger<WebhookController> logger)
+        {
+            _logger = logger;
+        }
 
         [HttpGet]
         public IActionResult Get()
@@ -21,13 +28,16 @@ namespace FacebookWebhookServerCore.Controllers
 
             if (string.IsNullOrEmpty(mode) || string.IsNullOrEmpty(verifyToken) || string.IsNullOrEmpty(challenge))
             {
+                _logger.LogWarning("Missing required parameters in GET request");
                 return BadRequest("Missing required parameters");
             }
 
             if (mode == "subscribe" && verifyToken == _verifyToken)
             {
+                _logger.LogInformation("Webhook verified successfully with challenge: {Challenge}", challenge);
                 return Content(challenge, "text/plain");
             }
+            _logger.LogWarning("Verify token mismatch: {VerifyToken}", verifyToken);
             return BadRequest("Verify token mismatch");
         }
 
@@ -36,24 +46,21 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                // Đọc body một lần và lưu vào biến
                 string body;
                 Request.EnableBuffering();
                 using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, leaveOpen: true))
                 {
                     body = await reader.ReadToEndAsync();
                 }
-                // Không cần đặt lại Position nếu chỉ đọc một lần
 
-                System.Diagnostics.Debug.WriteLine($"Raw body: {body}");
+                _logger.LogInformation("Received raw body: {Body}", body);
 
                 if (string.IsNullOrEmpty(body))
                 {
-                    System.Diagnostics.Debug.WriteLine("Body is empty");
+                    _logger.LogWarning("Received empty body");
                     return Ok(new { status = "success", receivedBody = "No data" });
                 }
 
-                // Phân tích JSON an toàn
                 var json = JObject.Parse(body);
                 var entries = json["entry"] as JArray;
 
@@ -61,34 +68,46 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     foreach (var entry in entries)
                     {
-                        var messaging = entry["messaging"] as JArray; // Thay changes bằng messaging nếu dùng messaging
+                        var messaging = entry["messaging"] as JArray;
                         if (messaging != null)
                         {
-                            foreach (var message in messaging)
+                            foreach (var messageObj in messaging)
                             {
-                                var value = message as JObject;
-                                var msgText = value?["message"]?["text"]?.ToString();
-                                var senderId = value?["sender"]?["id"]?.ToString();
+                                var senderId = messageObj["sender"]?["id"]?.ToString();
+                                var message = messageObj["message"] as JObject;
+                                var msgText = message?["text"]?.ToString();
 
                                 if (!string.IsNullOrEmpty(msgText) && !string.IsNullOrEmpty(senderId))
                                 {
-                                    System.Diagnostics.Debug.WriteLine($"Message from {senderId}: {msgText}");
+                                    _logger.LogInformation("Message from {SenderId}: {MessageText}", senderId, msgText);
+                                }
+                                else
+                                {
+                                    _logger.LogWarning("Incomplete message data: SenderId={SenderId}, Message={Message}", senderId, msgText);
                                 }
                             }
                         }
+                        else
+                        {
+                            _logger.LogWarning("No messaging data in entry");
+                        }
                     }
+                }
+                else
+                {
+                    _logger.LogWarning("No entry data in payload");
                 }
 
                 return Ok(new { status = "success", receivedBody = body });
             }
             catch (JsonReaderException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"JSON Parse Error: {ex.Message}");
+                _logger.LogError(ex, "JSON Parse Error");
                 return StatusCode(400, new { error = "Invalid JSON format" });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error: {ex.Message}");
+                _logger.LogError(ex, "Error processing webhook");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
