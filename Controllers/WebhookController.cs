@@ -98,6 +98,7 @@ namespace FacebookWebhookServerCore.Controllers
                     _logger.LogWarning("No entry data in payload");
                 }
 
+                // Định dạng JSON trả về để dễ nhìn
                 var response = new
                 {
                     status = "success",
