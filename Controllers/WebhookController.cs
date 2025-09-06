@@ -1,9 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -75,7 +75,7 @@ namespace FacebookWebhookServerCore.Controllers
                             {
                                 var senderId = messageObj["sender"]?["id"]?.ToString();
                                 var message = messageObj["message"] as JObject;
-                                var msgText = message?["text"]?.ToString();
+                                var msgText = message?["text"]?.ToString() ?? string.Empty;
 
                                 if (!string.IsNullOrEmpty(msgText) && !string.IsNullOrEmpty(senderId))
                                 {
@@ -98,7 +98,13 @@ namespace FacebookWebhookServerCore.Controllers
                     _logger.LogWarning("No entry data in payload");
                 }
 
-                return Ok(new { status = "success", receivedBody = body });
+                // Định dạng JSON trả về để dễ nhìn
+                var response = new
+                {
+                    status = "success",
+                    receivedBody = JToken.Parse(body).ToString(Formatting.Indented)
+                };
+                return new JsonResult(response) { SerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented } };
             }
             catch (JsonReaderException ex)
             {
