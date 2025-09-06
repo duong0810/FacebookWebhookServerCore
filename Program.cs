@@ -1,5 +1,11 @@
 ﻿var builder = WebApplication.CreateBuilder(args);
 
+// Cấu hình Kestrel trước khi Build
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "5000"));
+});
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -23,10 +29,5 @@ if (app.Environment.IsDevelopment())
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
-
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.ListenAnyIP(int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "5000"));
-});
 
 app.Run();
