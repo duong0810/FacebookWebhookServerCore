@@ -91,7 +91,7 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                var pageAccessToken = "EAASBBC1s6fgBP..."; // Thay bằng Page Access Token của bạn
+                var pageAccessToken = "EAASBBCls6fgBPfUWjdMtLBB131c8o2kbKWcR8CbR0gKn6ZAJuYnzoAeoECUDU07nnnOHZB7rjtqPVHa06vvwMTPdsuf0G1wnk3KZAxXMZAAZAcd2I59iF56fSrj13T3ShVOefHyAX4voSZAz69KU3TLRyDp3aMtWuywVrALXGh4pZBT19kNlKTo9I27arK1dZCQLpr6xvaLOEqZCT6ttorice"; // Thay bằng Page Access Token của bạn
                 var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
 
                 var payload = new
