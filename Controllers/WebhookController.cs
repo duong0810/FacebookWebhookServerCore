@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -61,52 +60,22 @@ namespace FacebookWebhookServerCore.Controllers
                     return Ok(new { status = "success", receivedBody = "No data" });
                 }
 
-                var json = JObject.Parse(body);
-                var entries = json["entry"] as JArray;
-
-                if (entries != null)
-                {
-                    foreach (var entry in entries)
-                    {
-                        var messaging = entry["messaging"] as JArray;
-                        if (messaging != null)
-                        {
-                            foreach (var messageObj in messaging)
-                            {
-                                var senderId = messageObj["sender"]?["id"]?.ToString();
-                                var message = messageObj["message"] as JObject;
-                                var msgText = message?["text"]?.ToString() ?? string.Empty;
-
-                                if (!string.IsNullOrEmpty(msgText) && !string.IsNullOrEmpty(senderId))
-                                {
-                                    _logger.LogInformation("Message from {SenderId}: {MessageText}", senderId, msgText);
-                                }
-                                else
-                                {
-                                    _logger.LogWarning("Incomplete message data: SenderId={SenderId}, Message={Message}", senderId, msgText);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            _logger.LogWarning("No messaging data in entry");
-                        }
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("No entry data in payload");
-                }
-
-                // Định dạng JSON trả về để dễ nhìn
+                var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+                var parsedBody = JsonSerializer.Deserialize<object>(body); // Parse raw
                 var response = new
                 {
                     status = "success",
-                    receivedBody = JToken.Parse(body).ToString(Formatting.Indented)
+                    receivedBody = parsedBody
                 };
-                return new JsonResult(response) { SerializerSettings = new JsonSerializerSettings { Formatting = Formatting.Indented } };
+                // Serialize toàn bộ response với định dạng đẹp
+                return new ContentResult
+                {
+                    Content = JsonSerializer.Serialize(response, jsonOptions),
+                    ContentType = "application/json",
+                    StatusCode = 200
+                };
             }
-            catch (JsonReaderException ex)
+            catch (JsonException ex)
             {
                 _logger.LogError(ex, "JSON Parse Error");
                 return StatusCode(400, new { error = "Invalid JSON format" });
