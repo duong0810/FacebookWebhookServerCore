@@ -1,65 +1,129 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.Net.Http;
-using System.Text;
+using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-[ApiController]
-[Route("api/[controller]")]
-public class SendMessageController : ControllerBase
+namespace FacebookWebhookServerCore.Controllers
 {
-    private readonly ILogger<SendMessageController> _logger;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _pageAccessToken = "YOUR_PAGE_ACCESS_TOKEN"; // Thay bằng token thực tế, tốt nhất lưu trong biến môi trường
-
-    public SendMessageController(ILogger<SendMessageController> logger, IHttpClientFactory httpClientFactory)
+    [ApiController]
+    [Route("api/[controller]")]
+    public class WebhookController : ControllerBase
     {
-        _logger = logger;
-        _httpClientFactory = httpClientFactory;
+        private readonly ILogger<WebhookController> _logger;
+        private readonly string _verifyToken = "kosmosdevelopment";
+
+        public WebhookController(ILogger<WebhookController> logger)
+        {
+            _logger = logger;
+        }
+
+        [HttpGet]
+        public IActionResult Get()
+        {
+            string verifyToken = Request.Query["hub.verify_token"];
+            string challenge = Request.Query["hub.challenge"];
+            string mode = Request.Query["hub.mode"];
+
+            if (string.IsNullOrEmpty(mode) || string.IsNullOrEmpty(verifyToken) || string.IsNullOrEmpty(challenge))
+            {
+                _logger.LogWarning("Missing required parameters in GET request");
+                return BadRequest("Missing required parameters");
+            }
+
+            if (mode == "subscribe" && verifyToken == _verifyToken)
+            {
+                _logger.LogInformation("Webhook verified successfully with challenge: {Challenge}", challenge);
+                return Content(challenge, "text/plain");
+            }
+            _logger.LogWarning("Verify token mismatch: {VerifyToken}", verifyToken);
+            return BadRequest("Verify token mismatch");
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Post()
+        {
+            try
+            {
+                string body;
+                Request.EnableBuffering();
+                using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, leaveOpen: true))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+
+                _logger.LogInformation("Received raw body: {Body}", body);
+
+                if (string.IsNullOrEmpty(body))
+                {
+                    _logger.LogWarning("Received empty body");
+                    return Ok(new { status = "success", receivedBody = "No data" });
+                }
+
+                var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+                var parsedBody = JsonSerializer.Deserialize<object>(body); // Parse raw
+                var response = new
+                {
+                    status = "success",
+                    receivedBody = parsedBody
+                };
+                // Serialize toàn bộ response với định dạng đẹp
+                return new ContentResult
+                {
+                    Content = JsonSerializer.Serialize(response, jsonOptions),
+                    ContentType = "application/json",
+                    StatusCode = 200
+                };
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "JSON Parse Error");
+                return StatusCode(400, new { error = "Invalid JSON format" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing webhook");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+        [HttpPost("send-message")]
+        public async Task<IActionResult> SendMessage([FromBody] MessageRequest request)
+        {
+            try
+            {
+                var pageAccessToken = "EAASBBC1s6fgBP..."; // Thay bằng Page Access Token của bạn
+                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
+
+                var payload = new
+                {
+                    recipient = new { id = request.RecipientId },
+                    message = new { text = request.Message }
+                };
+
+                using var httpClient = new HttpClient();
+                var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+                var response = await httpClient.PostAsync(url, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    return Ok(new { status = "success", details = responseContent });
+                }
+
+                var errorResponse = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, new { status = "error", details = errorResponse });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending message");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        public class MessageRequest
+        {
+            public string RecipientId { get; set; }
+            public string Message { get; set; }
+        }
     }
-
-    [HttpPost("send")]
-    public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
-    {
-        if (string.IsNullOrEmpty(request.UserId) || string.IsNullOrEmpty(request.MessageText))
-        {
-            return BadRequest("UserId and MessageText are required.");
-        }
-
-        var payload = new
-        {
-            messaging_type = "RESPONSE", // Sử dụng "MESSAGE_TAG" nếu ngoài 24 giờ với tag hợp lệ
-            recipient = new { id = request.UserId },
-            message = new { text = request.MessageText }
-        };
-
-        var content = new StringContent(
-            JsonSerializer.Serialize(payload),
-            Encoding.UTF8,
-            "application/json"
-        );
-
-        var url = $"https://graph.facebook.com/v20.0/me/messages?access_token={_pageAccessToken}";
-        var httpClient = _httpClientFactory.CreateClient();
-        var response = await httpClient.PostAsync(url, content);
-
-        if (response.IsSuccessStatusCode)
-        {
-            _logger.LogInformation("Message sent successfully to {UserId}", request.UserId);
-            return Ok(new { status = "success" });
-        }
-        else
-        {
-            var error = await response.Content.ReadAsStringAsync();
-            _logger.LogError("Failed to send message to {UserId}: {Error}", request.UserId, error);
-            return StatusCode((int)response.StatusCode, new { error = error });
-        }
-    }
-}
-
-public class SendMessageRequest
-{
-    public string UserId { get; set; }
-    public string MessageText { get; set; }
 }
