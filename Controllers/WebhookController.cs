@@ -60,20 +60,32 @@ namespace FacebookWebhookServerCore.Controllers
                     return Ok(new { status = "success", receivedBody = "No data" });
                 }
 
-                var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-                var parsedBody = JsonSerializer.Deserialize<object>(body); // Parse raw
-                var response = new
+                // Parse Facebook webhook payload
+                using var doc = JsonDocument.Parse(body);
+                var entry = doc.RootElement.GetProperty("entry")[0];
+                var messaging = entry.GetProperty("messaging")[0];
+
+                var senderId = messaging.GetProperty("sender").GetProperty("id").GetString();
+                var recipientId = messaging.GetProperty("recipient").GetProperty("id").GetString();
+                var content = messaging.GetProperty("message").GetProperty("text").GetString();
+                var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(
+                    messaging.GetProperty("timestamp").GetInt64()
+                ).UtcDateTime;
+
+                // Lưu vào database
+                var dbContext = HttpContext.RequestServices.GetService(typeof(Webhook_Message.Data.AppDbContext)) as Webhook_Message.Data.AppDbContext;
+                var message = new Message
                 {
-                    status = "success",
-                    receivedBody = parsedBody
+                    SenderId = senderId ?? "",
+                    RecipientId = recipientId ?? "",
+                    Content = content ?? "",
+                    Time = timestamp,
+                    Direction = "inbound"
                 };
-                // Serialize toàn bộ response với định dạng đẹp
-                return new ContentResult
-                {
-                    Content = JsonSerializer.Serialize(response, jsonOptions),
-                    ContentType = "application/json",
-                    StatusCode = 200
-                };
+                dbContext.Messages.Add(message);
+                await dbContext.SaveChangesAsync();
+
+                return Ok(new { status = "success" });
             }
             catch (JsonException ex)
             {
@@ -106,6 +118,19 @@ namespace FacebookWebhookServerCore.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
+                    // Lưu outbound message
+                    var dbContext = HttpContext.RequestServices.GetService(typeof(Webhook_Message.Data.AppDbContext)) as Webhook_Message.Data.AppDbContext;
+                    var message = new Message
+                    {
+                        SenderId = "807147519144166", // Thay bằng page id thực tế nếu cần
+                        RecipientId = request.RecipientId,
+                        Content = request.Message,
+                        Time = DateTime.UtcNow,
+                        Direction = "outbound"
+                    };
+                    dbContext.Messages.Add(message);
+                    await dbContext.SaveChangesAsync();
+
                     var responseContent = await response.Content.ReadAsStringAsync();
                     return Ok(new { status = "success", details = responseContent });
                 }
