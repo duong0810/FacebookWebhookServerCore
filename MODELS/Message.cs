@@ -1,4 +1,6 @@
-﻿namespace Webhook_Message.Models // Thay bằng namespace của project
+﻿using System;
+
+namespace Webhook_Message.Models
 {
     public class Message
     {
@@ -6,5 +8,11 @@
         public string SenderId { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public DateTime Time { get; set; }
+    }
+
+    public class MessageRequest
+    {
+        public string RecipientId { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
     }
 }
