@@ -1,9 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-
+using Webhook_Message.Models;
 namespace FacebookWebhookServerCore.Controllers
 {
     [ApiController]
@@ -91,7 +91,7 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                var pageAccessToken = "EAASBBCls6fgBPfUWjdMtLBB131c8o2kbKWcR8CbR0gKn6ZAJuYnzoAeoECUDU07nnnOHZB7rjtqPVHa06vvwMTPdsuf0G1wnk3KZAxXMZAAZAcd2I59iF56fSrj13T3ShVOefHyAX4voSZAz69KU3TLRyDp3aMtWuywVrALXGh4pZBT19kNlKTo9I27arK1dZCQLpr6xvaLOEqZCT6ttorice"; // Thay bằng Page Access Token của bạn
+                var pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P";
                 var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
 
                 var payload = new
@@ -120,10 +120,5 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        public class MessageRequest
-        {
-            public string RecipientId { get; set; }
-            public string Message { get; set; }
-        }
     }
 }
