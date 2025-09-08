@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Webhook_Message.Data;
 using Webhook_Message.Models;
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -38,6 +39,13 @@ namespace FacebookWebhookServerCore.Controllers
             }
             _logger.LogWarning("Verify token mismatch: {VerifyToken}", verifyToken);
             return BadRequest("Verify token mismatch");
+        }
+
+        [HttpGet("messages")]
+        public async Task<IActionResult> GetMessages([FromServices] AppDbContext dbContext)
+        {
+            var messages = await dbContext.Messages.OrderByDescending(m => m.Time).ToListAsync();
+            return Ok(messages);
         }
 
         [HttpPost]
