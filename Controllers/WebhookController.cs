@@ -290,7 +290,7 @@ namespace FacebookWebhookServerCore.Controllers
                 try
                 {
                     var client = _httpClientFactory.CreateClient();
-                    var requestUrl = $"https://graph.facebook.com/v19.0/{senderId}?fields=name,profile_pic&access_token={_pageAccessToken}";
+                    var requestUrl = $"https://graph.facebook.com/v21.0/{senderId}?fields=name,profile_pic&access_token={_pageAccessToken}";
                     var response = await client.GetAsync(requestUrl);
 
                     if (response.IsSuccessStatusCode)
