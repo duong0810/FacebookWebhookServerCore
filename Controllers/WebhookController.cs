@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Webhook_Message.Data;
 using Webhook_Message.Models;
+using Microsoft.EntityFrameworkCore;
+
 namespace FacebookWebhookServerCore.Controllers
 {
     [ApiController]
