@@ -13,6 +13,7 @@ using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 using System.Net.Http;
 using System;
+using System.Linq;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -180,9 +181,7 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                // SỬA LỖI: Đảm bảo Page đã tồn tại trong bảng Customers
-                await GetOrCreateCustomerAsync(dbContext, PageId, true);
-
+                var pageAsCustomer = await GetOrCreateCustomerAsync(dbContext, PageId, true);
                 var url = $"https://graph.facebook.com/{GraphApiVersion}/me/messages?access_token={_pageAccessToken}";
                 var payload = new { recipient = new { id = request.RecipientId }, message = new { text = request.Message } };
 
@@ -203,6 +202,7 @@ namespace FacebookWebhookServerCore.Controllers
                     dbContext.Messages.Add(message);
                     await dbContext.SaveChangesAsync();
 
+                    // SỬA LỖI: Thêm SenderName và SenderAvatar cho tin nhắn gửi đi
                     var messageViewModel = new MessageViewModel
                     {
                         Id = message.Id,
@@ -210,7 +210,9 @@ namespace FacebookWebhookServerCore.Controllers
                         RecipientId = message.RecipientId,
                         Content = message.Content,
                         Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                        Direction = message.Direction
+                        Direction = message.Direction,
+                        SenderName = pageAsCustomer.Name, // Lấy tên của Page
+                        SenderAvatar = pageAsCustomer.AvatarUrl // Lấy avatar của Page
                     };
                     await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
 
@@ -235,9 +237,7 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
-                // SỬA LỖI: Đảm bảo Page đã tồn tại trong bảng Customers
-                await GetOrCreateCustomerAsync(dbContext, PageId, true);
-
+                var pageAsCustomer = await GetOrCreateCustomerAsync(dbContext, PageId, true);
                 var fileUrl = await UploadToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
                 var url = $"https://graph.facebook.com/{GraphApiVersion}/me/messages?access_token={_pageAccessToken}";
@@ -265,6 +265,7 @@ namespace FacebookWebhookServerCore.Controllers
                     dbContext.Messages.Add(message);
                     await dbContext.SaveChangesAsync();
 
+                    // SỬA LỖI: Thêm SenderName và SenderAvatar cho tin nhắn gửi đi
                     var messageViewModel = new MessageViewModel
                     {
                         Id = message.Id,
@@ -272,7 +273,9 @@ namespace FacebookWebhookServerCore.Controllers
                         RecipientId = message.RecipientId,
                         Content = message.Content,
                         Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                        Direction = message.Direction
+                        Direction = message.Direction,
+                        SenderName = pageAsCustomer.Name, // Lấy tên của Page
+                        SenderAvatar = pageAsCustomer.AvatarUrl // Lấy avatar của Page
                     };
                     await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
 
