@@ -12,6 +12,7 @@ using FacebookWebhookServerCore.Hubs;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 using System.Net.Http;
+using System;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -24,7 +25,9 @@ namespace FacebookWebhookServerCore.Controllers
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly Cloudinary _cloudinary;
         private readonly IHttpClientFactory _httpClientFactory;
+        private const string GraphApiVersion = "v19.0";
         private readonly string _pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P"; // Thay bằng Page Access Token của bạn
+        private const string PageId = "807147519144166"; // Thay bằng Page ID của bạn
 
         public WebhookController(ILogger<WebhookController> logger, IHubContext<ChatHub> hubContext, Cloudinary cloudinary, IHttpClientFactory httpClientFactory)
         {
@@ -177,7 +180,10 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
-                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={_pageAccessToken}";
+                // SỬA LỖI: Đảm bảo Page đã tồn tại trong bảng Customers
+                await GetOrCreateCustomerAsync(dbContext, PageId, true);
+
+                var url = $"https://graph.facebook.com/{GraphApiVersion}/me/messages?access_token={_pageAccessToken}";
                 var payload = new { recipient = new { id = request.RecipientId }, message = new { text = request.Message } };
 
                 using var httpClient = _httpClientFactory.CreateClient();
@@ -188,7 +194,7 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     var message = new Message
                     {
-                        SenderId = "807147519144166", // Page ID
+                        SenderId = PageId,
                         RecipientId = request.RecipientId,
                         Content = request.Message,
                         Time = DateTime.UtcNow,
@@ -229,9 +235,12 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
+                // SỬA LỖI: Đảm bảo Page đã tồn tại trong bảng Customers
+                await GetOrCreateCustomerAsync(dbContext, PageId, true);
+
                 var fileUrl = await UploadToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
-                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={_pageAccessToken}";
+                var url = $"https://graph.facebook.com/{GraphApiVersion}/me/messages?access_token={_pageAccessToken}";
 
                 var payload = new
                 {
@@ -247,7 +256,7 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     var message = new Message
                     {
-                        SenderId = "807147519144166", // Page ID
+                        SenderId = PageId,
                         RecipientId = recipientId,
                         Content = fileUrl,
                         Time = DateTime.UtcNow,
@@ -281,16 +290,20 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        private async Task<Customer> GetOrCreateCustomerAsync(AppDbContext dbContext, string senderId)
+        private async Task<Customer> GetOrCreateCustomerAsync(AppDbContext dbContext, string senderId, bool isPage = false)
         {
-            var customer = await dbContext.Customers.FindAsync(senderId);
+            var customer = await dbContext.Customers.FirstOrDefaultAsync(c => c.FacebookId == senderId);
 
             if (customer == null || customer.LastUpdated < DateTime.UtcNow.AddDays(-1))
             {
                 try
                 {
                     var client = _httpClientFactory.CreateClient();
-                    var requestUrl = $"https://graph.facebook.com/v21.0/{senderId}?fields=name,profile_pic&access_token={_pageAccessToken}";
+                    // Nếu là Page, gọi API với 'me' để lấy thông tin chính nó
+                    var requestUrl = isPage
+                        ? $"https://graph.facebook.com/{GraphApiVersion}/me?fields=name,picture&access_token={_pageAccessToken}"
+                        : $"https://graph.facebook.com/{GraphApiVersion}/{senderId}?fields=name,profile_pic&access_token={_pageAccessToken}";
+
                     var response = await client.GetAsync(requestUrl);
 
                     if (response.IsSuccessStatusCode)
@@ -298,11 +311,18 @@ namespace FacebookWebhookServerCore.Controllers
                         var content = await response.Content.ReadAsStringAsync();
                         using var doc = JsonDocument.Parse(content);
                         var root = doc.RootElement;
-
                         var name = root.GetProperty("name").GetString();
+                        string avatarUrl = "";
 
-                        // SỬA LỖI: Lấy URL avatar trực tiếp từ 'profile_pic'
-                        var avatarUrl = root.GetProperty("profile_pic").GetString();
+                        // API trả về cấu trúc JSON khác nhau cho 'me' và user ID
+                        if (isPage && root.TryGetProperty("picture", out var pagePicElement))
+                        {
+                            avatarUrl = pagePicElement.GetProperty("data").GetProperty("url").GetString();
+                        }
+                        else if (!isPage && root.TryGetProperty("profile_pic", out var userPicElement))
+                        {
+                            avatarUrl = userPicElement.GetProperty("data").GetProperty("url").GetString();
+                        }
 
                         if (customer == null)
                         {
@@ -316,18 +336,24 @@ namespace FacebookWebhookServerCore.Controllers
 
                         await dbContext.SaveChangesAsync();
                     }
-                    else // Thêm log để biết lý do API thất bại
+                    else
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();
-                        _logger.LogError("Failed to fetch profile from Facebook. Status: {StatusCode}, Response: {Response}", response.StatusCode, errorContent);
+                        _logger.LogError("Failed to fetch profile from Facebook for ID {Id}. Status: {StatusCode}, Response: {Response}", senderId, response.StatusCode, errorContent);
+                        if (customer == null)
+                        {
+                            customer = new Customer { FacebookId = senderId, Name = isPage ? "My Page" : $"Customer {senderId}", AvatarUrl = "" };
+                            dbContext.Customers.Add(customer);
+                            await dbContext.SaveChangesAsync();
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to fetch customer profile from Facebook.");
+                    _logger.LogError(ex, "Exception when fetching profile for ID {Id}.", senderId);
                     if (customer == null)
                     {
-                        customer = new Customer { FacebookId = senderId, Name = $"Customer {senderId}", AvatarUrl = "" };
+                        customer = new Customer { FacebookId = senderId, Name = isPage ? "My Page" : $"Customer {senderId}", AvatarUrl = "" };
                         dbContext.Customers.Add(customer);
                         await dbContext.SaveChangesAsync();
                     }
