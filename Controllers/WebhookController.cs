@@ -9,8 +9,9 @@ using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using Microsoft.AspNetCore.SignalR;
 using FacebookWebhookServerCore.Hubs;
-using CloudinaryDotNet; // Thêm using
-using CloudinaryDotNet.Actions; // Thêm using
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
+using System.Net.Http;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -21,13 +22,16 @@ namespace FacebookWebhookServerCore.Controllers
         private readonly ILogger<WebhookController> _logger;
         private readonly string _verifyToken = "kosmosdevelopment";
         private readonly IHubContext<ChatHub> _hubContext;
-        private readonly Cloudinary _cloudinary; // 1. Thêm biến Cloudinary
+        private readonly Cloudinary _cloudinary;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly string _pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P"; // Thay bằng Page Access Token của bạn
 
-        public WebhookController(ILogger<WebhookController> logger, IHubContext<ChatHub> hubContext, Cloudinary cloudinary) // 2. Sửa constructor
+        public WebhookController(ILogger<WebhookController> logger, IHubContext<ChatHub> hubContext, Cloudinary cloudinary, IHttpClientFactory httpClientFactory)
         {
             _logger = logger;
             _hubContext = hubContext;
-            _cloudinary = cloudinary; // 3. Gán giá trị
+            _cloudinary = cloudinary;
+            _httpClientFactory = httpClientFactory;
         }
 
         [HttpGet]
@@ -55,85 +59,97 @@ namespace FacebookWebhookServerCore.Controllers
         [HttpGet("messages")]
         public async Task<IActionResult> GetMessages([FromServices] AppDbContext dbContext)
         {
-            var messages = await dbContext.Messages.OrderByDescending(m => m.Time).ToListAsync();
-            var messageViewModels = messages.Select(m => new MessageViewModel
-            {
-                Id = m.Id,
-                SenderId = m.SenderId,
-                RecipientId = m.RecipientId,
-                Content = m.Content,
-                Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                Direction = m.Direction
-            });
-            return Ok(messageViewModels);
+            var messages = await dbContext.Messages
+                .OrderByDescending(m => m.Time)
+                .Include(m => m.Sender)
+                .Select(m => new MessageViewModel
+                {
+                    Id = m.Id,
+                    SenderId = m.SenderId,
+                    RecipientId = m.RecipientId,
+                    Content = m.Content,
+                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = m.Direction,
+                    SenderName = m.Sender.Name,
+                    SenderAvatar = m.Sender.AvatarUrl
+                })
+                .ToListAsync();
+            return Ok(messages);
         }
 
         [HttpGet("messages/by-customer/{customerId}")]
-        public async Task<IActionResult> GetMessagesByCustomer(
-        [FromServices] AppDbContext dbContext, string customerId)
+        public async Task<IActionResult> GetMessagesByCustomer([FromServices] AppDbContext dbContext, string customerId)
         {
             var messages = await dbContext.Messages
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
+                .Include(m => m.Sender)
+                .Select(m => new MessageViewModel
+                {
+                    Id = m.Id,
+                    SenderId = m.SenderId,
+                    RecipientId = m.RecipientId,
+                    Content = m.Content,
+                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = m.Direction,
+                    SenderName = m.Sender.Name,
+                    SenderAvatar = m.Sender.AvatarUrl
+                })
                 .ToListAsync();
-            var messageViewModels = messages.Select(m => new MessageViewModel
-            {
-                Id = m.Id,
-                SenderId = m.SenderId,
-                RecipientId = m.RecipientId,
-                Content = m.Content,
-                Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                Direction = m.Direction
-            });
-            return Ok(messageViewModels);
+            return Ok(messages);
         }
 
         [HttpPost]
-        public async Task<IActionResult> Post()
+        public async Task<IActionResult> Post([FromServices] AppDbContext dbContext)
         {
             try
             {
                 string body;
-                Request.EnableBuffering();
-                using (var reader = new StreamReader(Request.Body, encoding: System.Text.Encoding.UTF8, leaveOpen: true))
+                using (var reader = new StreamReader(Request.Body))
                 {
                     body = await reader.ReadToEndAsync();
                 }
 
                 _logger.LogInformation("Received raw body: {Body}", body);
 
-                if (string.IsNullOrEmpty(body))
-                {
-                    _logger.LogWarning("Received empty body");
-                    return Ok(new { status = "success", receivedBody = "No data" });
-                }
-
-                // Parse Facebook webhook payload
                 using var doc = JsonDocument.Parse(body);
                 var entry = doc.RootElement.GetProperty("entry")[0];
                 var messaging = entry.GetProperty("messaging")[0];
 
                 var senderId = messaging.GetProperty("sender").GetProperty("id").GetString();
                 var recipientId = messaging.GetProperty("recipient").GetProperty("id").GetString();
-                var content = messaging.GetProperty("message").GetProperty("text").GetString();
-                var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(
-                    messaging.GetProperty("timestamp").GetInt64()
-                ).UtcDateTime;
+                var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(messaging.GetProperty("timestamp").GetInt64()).UtcDateTime;
 
-                // Lưu vào database
-                var dbContext = HttpContext.RequestServices.GetService(typeof(Webhook_Message.Data.AppDbContext)) as Webhook_Message.Data.AppDbContext;
+                var messageElement = messaging.GetProperty("message");
+                string content;
+
+                if (messageElement.TryGetProperty("text", out var textElement))
+                {
+                    content = textElement.GetString();
+                }
+                else if (messageElement.TryGetProperty("attachments", out var attachmentsElement))
+                {
+                    var firstAttachment = attachmentsElement[0];
+                    content = firstAttachment.GetProperty("payload").GetProperty("url").GetString();
+                }
+                else
+                {
+                    content = "[Unsupported message type]";
+                }
+
+                var customer = await GetOrCreateCustomerAsync(dbContext, senderId);
+
                 var message = new Message
                 {
-                    SenderId = senderId ?? "",
-                    RecipientId = recipientId ?? "",
-                    Content = content ?? "",
+                    SenderId = customer.FacebookId,
+                    RecipientId = recipientId,
+                    Content = content,
                     Time = timestamp,
                     Direction = "inbound"
                 };
                 dbContext.Messages.Add(message);
                 await dbContext.SaveChangesAsync();
 
-                // Đẩy tin nhắn đến các client qua SignalR
                 var messageViewModel = new MessageViewModel
                 {
                     Id = message.Id,
@@ -141,16 +157,13 @@ namespace FacebookWebhookServerCore.Controllers
                     RecipientId = message.RecipientId,
                     Content = message.Content,
                     Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                    Direction = message.Direction
+                    Direction = message.Direction,
+                    SenderName = customer.Name,
+                    SenderAvatar = customer.AvatarUrl
                 };
                 await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
 
                 return Ok(new { status = "success" });
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "JSON Parse Error");
-                return StatusCode(400, new { error = "Invalid JSON format" });
             }
             catch (Exception ex)
             {
@@ -158,31 +171,24 @@ namespace FacebookWebhookServerCore.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
         [HttpPost("send-message")]
-        public async Task<IActionResult> SendMessage([FromBody] MessageRequest request)
+        public async Task<IActionResult> SendMessage([FromServices] AppDbContext dbContext, [FromBody] MessageRequest request)
         {
             try
             {
-                var pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P";
-                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
+                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={_pageAccessToken}";
+                var payload = new { recipient = new { id = request.RecipientId }, message = new { text = request.Message } };
 
-                var payload = new
-                {
-                    recipient = new { id = request.RecipientId },
-                    message = new { text = request.Message }
-                };
-
-                using var httpClient = new HttpClient();
+                using var httpClient = _httpClientFactory.CreateClient();
                 var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
                 var response = await httpClient.PostAsync(url, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    // Lưu outbound message
-                    var dbContext = HttpContext.RequestServices.GetService(typeof(Webhook_Message.Data.AppDbContext)) as Webhook_Message.Data.AppDbContext;
                     var message = new Message
                     {
-                        SenderId = "807147519144166", // Thay bằng page id thực tế nếu cần
+                        SenderId = "807147519144166", // Page ID
                         RecipientId = request.RecipientId,
                         Content = request.Message,
                         Time = DateTime.UtcNow,
@@ -191,7 +197,6 @@ namespace FacebookWebhookServerCore.Controllers
                     dbContext.Messages.Add(message);
                     await dbContext.SaveChangesAsync();
 
-                    // Đẩy tin nhắn đến các client qua SignalR
                     var messageViewModel = new MessageViewModel
                     {
                         Id = message.Id,
@@ -216,57 +221,41 @@ namespace FacebookWebhookServerCore.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
         [HttpPost("send-attachment")]
-        public async Task<IActionResult> SendAttachment([FromForm] string recipientId, [FromForm] IFormFile file)
+        public async Task<IActionResult> SendAttachment([FromServices] AppDbContext dbContext, [FromForm] string recipientId, [FromForm] IFormFile file)
         {
-            if (file == null || file.Length == 0)
-            {
-                return BadRequest("File is empty.");
-            }
+            if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
             try
             {
-                // 1. Upload file lên Cloudinary và lấy URL
                 var fileUrl = await UploadToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
-
-                // 2. Gửi file qua Facebook Graph API
-                var pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P";
-                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
+                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={_pageAccessToken}";
 
                 var payload = new
                 {
                     recipient = new { id = recipientId },
-                    message = new
-                    {
-                        attachment = new
-                        {
-                            type = attachmentType,
-                            payload = new { url = fileUrl, is_reusable = true }
-                        }
-                    }
+                    message = new { attachment = new { type = attachmentType, payload = new { url = fileUrl, is_reusable = true } } }
                 };
 
-                using var httpClient = new HttpClient();
+                using var httpClient = _httpClientFactory.CreateClient();
                 var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
                 var response = await httpClient.PostAsync(url, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    // 3. Lưu tin nhắn vào database
-                    var dbContext = HttpContext.RequestServices.GetRequiredService<AppDbContext>();
                     var message = new Message
                     {
                         SenderId = "807147519144166", // Page ID
                         RecipientId = recipientId,
-                        Content = fileUrl, // Lưu URL của file từ Cloudinary
+                        Content = fileUrl,
                         Time = DateTime.UtcNow,
                         Direction = "outbound"
                     };
                     dbContext.Messages.Add(message);
                     await dbContext.SaveChangesAsync();
 
-                    // 4. Đẩy tin nhắn qua SignalR
                     var messageViewModel = new MessageViewModel
                     {
                         Id = message.Id,
@@ -292,38 +281,71 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        // Hàm helper mới để upload lên Cloudinary
+        private async Task<Customer> GetOrCreateCustomerAsync(AppDbContext dbContext, string senderId)
+        {
+            var customer = await dbContext.Customers.FindAsync(senderId);
+
+            if (customer == null || customer.LastUpdated < DateTime.UtcNow.AddDays(-1))
+            {
+                try
+                {
+                    var client = _httpClientFactory.CreateClient();
+                    var requestUrl = $"https://graph.facebook.com/v19.0/{senderId}?fields=name,profile_pic&access_token={_pageAccessToken}";
+                    var response = await client.GetAsync(requestUrl);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var content = await response.Content.ReadAsStringAsync();
+                        using var doc = JsonDocument.Parse(content);
+                        var name = doc.RootElement.GetProperty("name").GetString();
+                        var avatarUrl = doc.RootElement.GetProperty("profile_pic").GetProperty("data").GetProperty("url").GetString();
+
+                        if (customer == null)
+                        {
+                            customer = new Customer { FacebookId = senderId };
+                            dbContext.Customers.Add(customer);
+                        }
+
+                        customer.Name = name;
+                        customer.AvatarUrl = avatarUrl;
+                        customer.LastUpdated = DateTime.UtcNow;
+
+                        await dbContext.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to fetch customer profile from Facebook.");
+                    if (customer == null)
+                    {
+                        customer = new Customer { FacebookId = senderId, Name = $"Customer {senderId}", AvatarUrl = "" };
+                    }
+                }
+            }
+            return customer;
+        }
+
         private async Task<string> UploadToCloudinaryAsync(IFormFile file)
         {
-            var uploadResult = new RawUploadResult(); // Dùng RawUploadResult cho các loại file
-
+            var uploadResult = new RawUploadResult();
             if (file.Length > 0)
             {
                 using (var stream = file.OpenReadStream())
                 {
-                    var uploadParams = new RawUploadParams()
-                    {
-                        File = new FileDescription(file.FileName, stream)
-                    };
+                    var uploadParams = new RawUploadParams() { File = new FileDescription(file.FileName, stream) };
                     uploadResult = await _cloudinary.UploadAsync(uploadParams);
                 }
             }
-
-            if (uploadResult.Error != null)
-            {
-                throw new Exception(uploadResult.Error.Message);
-            }
-
+            if (uploadResult.Error != null) throw new Exception(uploadResult.Error.Message);
             return uploadResult.SecureUrl.AbsoluteUri;
         }
 
-        // Hàm helper để xác định loại file đính kèm
         private string GetAttachmentType(string contentType)
         {
             if (contentType.StartsWith("image/")) return "image";
             if (contentType.StartsWith("video/")) return "video";
             if (contentType.StartsWith("audio/")) return "audio";
-            return "file"; // Loại mặc định
+            return "file";
         }
     }
 }
