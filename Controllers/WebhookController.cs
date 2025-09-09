@@ -316,9 +316,14 @@ namespace FacebookWebhookServerCore.Controllers
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to fetch customer profile from Facebook.");
+                    // Nếu lỗi, tạo và lưu khách hàng mặc định
                     if (customer == null)
                     {
                         customer = new Customer { FacebookId = senderId, Name = $"Customer {senderId}", AvatarUrl = "" };
+
+                        // SỬA LỖI: Thêm khách hàng vào context và lưu lại
+                        dbContext.Customers.Add(customer);
+                        await dbContext.SaveChangesAsync();
                     }
                 }
             }
