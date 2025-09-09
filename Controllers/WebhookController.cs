@@ -7,6 +7,8 @@ using Webhook_Message.Data;
 using Webhook_Message.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using Microsoft.AspNetCore.SignalR; // Thêm dòng này
+using FacebookWebhookServerCore.Hubs; // Thêm dòng này
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -16,10 +18,12 @@ namespace FacebookWebhookServerCore.Controllers
     {
         private readonly ILogger<WebhookController> _logger;
         private readonly string _verifyToken = "kosmosdevelopment";
+        private readonly IHubContext<ChatHub> _hubContext; // Thêm dòng này
 
-        public WebhookController(ILogger<WebhookController> logger)
+        public WebhookController(ILogger<WebhookController> logger, IHubContext<ChatHub> hubContext) // Sửa dòng này
         {
             _logger = logger;
+            _hubContext = hubContext; // Thêm dòng này
         }
 
         [HttpGet]
@@ -125,6 +129,18 @@ namespace FacebookWebhookServerCore.Controllers
                 dbContext.Messages.Add(message);
                 await dbContext.SaveChangesAsync();
 
+                // Đẩy tin nhắn đến các client qua SignalR
+                var messageViewModel = new MessageViewModel
+                {
+                    Id = message.Id,
+                    SenderId = message.SenderId,
+                    RecipientId = message.RecipientId,
+                    Content = message.Content,
+                    Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = message.Direction
+                };
+                await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
+
                 return Ok(new { status = "success" });
             }
             catch (JsonException ex)
@@ -170,6 +186,18 @@ namespace FacebookWebhookServerCore.Controllers
                     };
                     dbContext.Messages.Add(message);
                     await dbContext.SaveChangesAsync();
+
+                    // Đẩy tin nhắn đến các client qua SignalR
+                    var messageViewModel = new MessageViewModel
+                    {
+                        Id = message.Id,
+                        SenderId = message.SenderId,
+                        RecipientId = message.RecipientId,
+                        Content = message.Content,
+                        Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Direction = message.Direction
+                    };
+                    await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
 
                     var responseContent = await response.Content.ReadAsStringAsync();
                     return Ok(new { status = "success", details = responseContent });

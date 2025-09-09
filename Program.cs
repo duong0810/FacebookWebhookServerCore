@@ -1,5 +1,7 @@
 ﻿using Webhook_Message.Data;
 using Microsoft.EntityFrameworkCore;
+using FacebookWebhookServerCore.Hubs; // Thêm dòng này
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Cấu hình Kestrel trước khi Build
@@ -9,6 +11,7 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 builder.Services.AddControllers();
+builder.Services.AddSignalR(); // Thêm dòng này
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
@@ -34,6 +37,7 @@ if (app.Environment.IsDevelopment())
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<ChatHub>("/chatHub"); // Thêm dòng này
 
 using (var scope = app.Services.CreateScope())
 {
