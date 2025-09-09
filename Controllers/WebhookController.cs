@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Webhook_Message.Data;
 using Webhook_Message.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -47,7 +48,16 @@ namespace FacebookWebhookServerCore.Controllers
         public async Task<IActionResult> GetMessages([FromServices] AppDbContext dbContext)
         {
             var messages = await dbContext.Messages.OrderByDescending(m => m.Time).ToListAsync();
-            return Ok(messages);
+            var messageViewModels = messages.Select(m => new MessageViewModel
+            {
+                Id = m.Id,
+                SenderId = m.SenderId,
+                RecipientId = m.RecipientId,
+                Content = m.Content,
+                Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                Direction = m.Direction
+            });
+            return Ok(messageViewModels);
         }
 
         [HttpGet("messages/by-customer/{customerId}")]
@@ -58,7 +68,16 @@ namespace FacebookWebhookServerCore.Controllers
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
                 .ToListAsync();
-            return Ok(messages);
+            var messageViewModels = messages.Select(m => new MessageViewModel
+            {
+                Id = m.Id,
+                SenderId = m.SenderId,
+                RecipientId = m.RecipientId,
+                Content = m.Content,
+                Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                Direction = m.Direction
+            });
+            return Ok(messageViewModels);
         }
 
         [HttpPost]
