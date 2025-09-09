@@ -212,6 +212,116 @@ namespace FacebookWebhookServerCore.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+        [HttpPost("send-attachment")]
+        public async Task<IActionResult> SendAttachment([FromForm] string recipientId, [FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("File is empty.");
+            }
 
+            try
+            {
+                // 1. Lưu file vào wwwroot và lấy URL công khai
+                var fileUrl = await SaveFileAndGetPublicUrl(file);
+                var attachmentType = GetAttachmentType(file.ContentType);
+
+                // 2. Gửi file qua Facebook Graph API
+                var pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P"; // Thay bằng Page Access Token của bạn
+                var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
+
+                var payload = new
+                {
+                    recipient = new { id = recipientId },
+                    message = new
+                    {
+                        attachment = new
+                        {
+                            type = attachmentType,
+                            payload = new { url = fileUrl, is_reusable = true }
+                        }
+                    }
+                };
+
+                using var httpClient = new HttpClient();
+                var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+                var response = await httpClient.PostAsync(url, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    // 3. Lưu tin nhắn vào database
+                    var dbContext = HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                    var message = new Message
+                    {
+                        SenderId = "807147519144166", // Page ID
+                        RecipientId = recipientId,
+                        Content = fileUrl, // Lưu URL của file
+                        Time = DateTime.UtcNow,
+                        Direction = "outbound"
+                    };
+                    dbContext.Messages.Add(message);
+                    await dbContext.SaveChangesAsync();
+
+                    // 4. Đẩy tin nhắn qua SignalR
+                    var messageViewModel = new MessageViewModel
+                    {
+                        Id = message.Id,
+                        SenderId = message.SenderId,
+                        RecipientId = message.RecipientId,
+                        Content = message.Content,
+                        Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Direction = message.Direction
+                    };
+                    await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    return Ok(new { status = "success", details = responseContent });
+                }
+
+                var errorResponse = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, new { status = "error", details = errorResponse });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending attachment");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        // Hàm helper để lưu file và tạo URL
+        private async Task<string> SaveFileAndGetPublicUrl(IFormFile file)
+        {
+            // Tạo thư mục 'uploads' trong 'wwwroot' nếu chưa có
+            var uploadsFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+            if (!Directory.Exists(uploadsFolderPath))
+            {
+                Directory.CreateDirectory(uploadsFolderPath);
+            }
+
+            // Tạo tên file duy nhất để tránh trùng lặp
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+            var filePath = Path.Combine(uploadsFolderPath, fileName);
+
+            // Lưu file vào đường dẫn
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Tạo URL công khai
+            var request = HttpContext.Request;
+            var publicUrl = $"{request.Scheme}://{request.Host}/uploads/{fileName}";
+
+            return publicUrl;
+        }
+
+        // Hàm helper để xác định loại file đính kèm
+        private string GetAttachmentType(string contentType)
+        {
+            if (contentType.StartsWith("image/")) return "image";
+            if (contentType.StartsWith("video/")) return "video";
+            if (contentType.StartsWith("audio/")) return "audio";
+            return "file"; // Loại mặc định
+        }
     }
 }
