@@ -297,8 +297,12 @@ namespace FacebookWebhookServerCore.Controllers
                     {
                         var content = await response.Content.ReadAsStringAsync();
                         using var doc = JsonDocument.Parse(content);
-                        var name = doc.RootElement.GetProperty("name").GetString();
-                        var avatarUrl = doc.RootElement.GetProperty("profile_pic").GetProperty("data").GetProperty("url").GetString();
+                        var root = doc.RootElement;
+
+                        var name = root.GetProperty("name").GetString();
+
+                        // SỬA LỖI: Lấy URL avatar trực tiếp từ 'profile_pic'
+                        var avatarUrl = root.GetProperty("profile_pic").GetString();
 
                         if (customer == null)
                         {
@@ -312,16 +316,18 @@ namespace FacebookWebhookServerCore.Controllers
 
                         await dbContext.SaveChangesAsync();
                     }
+                    else // Thêm log để biết lý do API thất bại
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        _logger.LogError("Failed to fetch profile from Facebook. Status: {StatusCode}, Response: {Response}", response.StatusCode, errorContent);
+                    }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to fetch customer profile from Facebook.");
-                    // Nếu lỗi, tạo và lưu khách hàng mặc định
                     if (customer == null)
                     {
                         customer = new Customer { FacebookId = senderId, Name = $"Customer {senderId}", AvatarUrl = "" };
-
-                        // SỬA LỖI: Thêm khách hàng vào context và lưu lại
                         dbContext.Customers.Add(customer);
                         await dbContext.SaveChangesAsync();
                     }
