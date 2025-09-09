@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using FacebookWebhookServerCore.Hubs;
 using Webhook_Message.Models;
 using CloudinaryDotNet;
+using Microsoft.AspNetCore.Http.Features; // Thêm using này
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,10 +11,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.ListenAnyIP(int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "5000"));
+    // Tăng giới hạn kích thước request body của Kestrel
+    options.Limits.MaxRequestBodySize = 30 * 1024 * 1024; // 30 MB
 });
 
+// Cấu hình giới hạn cho form data
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 30 * 1024 * 1024; // 30 MB
+});
+
+
 builder.Services.AddControllers();
-builder.Services.AddSignalR(); 
+builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
@@ -24,9 +34,6 @@ builder.Services.AddLogging(logging =>
     logging.AddConsole();
     logging.AddDebug();
 });
-
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Cấu hình và đăng ký Cloudinary
 builder.Services.Configure<CloudinarySettings>(builder.Configuration.GetSection("CloudinarySettings"));
@@ -42,7 +49,6 @@ builder.Services.AddSingleton(sp =>
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
-
 
 var app = builder.Build();
 
