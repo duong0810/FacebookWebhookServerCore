@@ -50,6 +50,17 @@ namespace FacebookWebhookServerCore.Controllers
             return Ok(messages);
         }
 
+        [HttpGet("messages/by-customer/{customerId}")]
+        public async Task<IActionResult> GetMessagesByCustomer(
+        [FromServices] AppDbContext dbContext, string customerId)
+        {
+            var messages = await dbContext.Messages
+                .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
+                .OrderByDescending(m => m.Time)
+                .ToListAsync();
+            return Ok(messages);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Post()
         {
