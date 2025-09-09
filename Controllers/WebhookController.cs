@@ -7,8 +7,10 @@ using Webhook_Message.Data;
 using Webhook_Message.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
-using Microsoft.AspNetCore.SignalR; // Thêm dòng này
-using FacebookWebhookServerCore.Hubs; // Thêm dòng này
+using Microsoft.AspNetCore.SignalR;
+using FacebookWebhookServerCore.Hubs;
+using CloudinaryDotNet; // Thêm using
+using CloudinaryDotNet.Actions; // Thêm using
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -18,12 +20,14 @@ namespace FacebookWebhookServerCore.Controllers
     {
         private readonly ILogger<WebhookController> _logger;
         private readonly string _verifyToken = "kosmosdevelopment";
-        private readonly IHubContext<ChatHub> _hubContext; // Thêm dòng này
+        private readonly IHubContext<ChatHub> _hubContext;
+        private readonly Cloudinary _cloudinary; // 1. Thêm biến Cloudinary
 
-        public WebhookController(ILogger<WebhookController> logger, IHubContext<ChatHub> hubContext) // Sửa dòng này
+        public WebhookController(ILogger<WebhookController> logger, IHubContext<ChatHub> hubContext, Cloudinary cloudinary) // 2. Sửa constructor
         {
             _logger = logger;
-            _hubContext = hubContext; // Thêm dòng này
+            _hubContext = hubContext;
+            _cloudinary = cloudinary; // 3. Gán giá trị
         }
 
         [HttpGet]
@@ -222,12 +226,12 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
-                // 1. Lưu file vào wwwroot và lấy URL công khai
-                var fileUrl = await SaveFileAndGetPublicUrl(file);
+                // 1. Upload file lên Cloudinary và lấy URL
+                var fileUrl = await UploadToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
 
                 // 2. Gửi file qua Facebook Graph API
-                var pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P"; // Thay bằng Page Access Token của bạn
+                var pageAccessToken = "EAASBBCls6fgBPYafEJZA2pWrDBvSy4VlkeVLpg9BFQJwZCB3fuOZBRJu4950XhFnNPkwgkfDvqKY17X52Kgtpl5ZA68UqFfmXbWSrU7xnHxZCShxzM39ZBqZBxmJGLVKNs1SrqpDs9Y9J0L3RW3TWcZAUyIIXZAZAWZCFBv4ywgekXYyUSkA2qaSIhwDvj88qQ8QWdNEZA7oUx78gT6cWUmWhhMHIe0P";
                 var url = $"https://graph.facebook.com/v21.0/me/messages?access_token={pageAccessToken}";
 
                 var payload = new
@@ -255,7 +259,7 @@ namespace FacebookWebhookServerCore.Controllers
                     {
                         SenderId = "807147519144166", // Page ID
                         RecipientId = recipientId,
-                        Content = fileUrl, // Lưu URL của file
+                        Content = fileUrl, // Lưu URL của file từ Cloudinary
                         Time = DateTime.UtcNow,
                         Direction = "outbound"
                     };
@@ -288,31 +292,29 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        // Hàm helper để lưu file và tạo URL
-        private async Task<string> SaveFileAndGetPublicUrl(IFormFile file)
+        // Hàm helper mới để upload lên Cloudinary
+        private async Task<string> UploadToCloudinaryAsync(IFormFile file)
         {
-            // Tạo thư mục 'uploads' trong 'wwwroot' nếu chưa có
-            var uploadsFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-            if (!Directory.Exists(uploadsFolderPath))
+            var uploadResult = new RawUploadResult(); // Dùng RawUploadResult cho các loại file
+
+            if (file.Length > 0)
             {
-                Directory.CreateDirectory(uploadsFolderPath);
+                using (var stream = file.OpenReadStream())
+                {
+                    var uploadParams = new RawUploadParams()
+                    {
+                        File = new FileDescription(file.FileName, stream)
+                    };
+                    uploadResult = await _cloudinary.UploadAsync(uploadParams);
+                }
             }
 
-            // Tạo tên file duy nhất để tránh trùng lặp
-            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-            var filePath = Path.Combine(uploadsFolderPath, fileName);
-
-            // Lưu file vào đường dẫn
-            using (var stream = new FileStream(filePath, FileMode.Create))
+            if (uploadResult.Error != null)
             {
-                await file.CopyToAsync(stream);
+                throw new Exception(uploadResult.Error.Message);
             }
 
-            // Tạo URL công khai
-            var request = HttpContext.Request;
-            var publicUrl = $"{request.Scheme}://{request.Host}/uploads/{fileName}";
-
-            return publicUrl;
+            return uploadResult.SecureUrl.AbsoluteUri;
         }
 
         // Hàm helper để xác định loại file đính kèm

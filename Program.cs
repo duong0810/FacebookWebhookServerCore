@@ -1,6 +1,8 @@
 ﻿using Webhook_Message.Data;
 using Microsoft.EntityFrameworkCore;
-using FacebookWebhookServerCore.Hubs; // Thêm dòng này
+using FacebookWebhookServerCore.Hubs;
+using Webhook_Message.Models;
+using CloudinaryDotNet;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,7 +13,7 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 builder.Services.AddControllers();
-builder.Services.AddSignalR(); // Thêm dòng này
+builder.Services.AddSignalR(); 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
@@ -26,6 +28,22 @@ builder.Services.AddLogging(logging =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Cấu hình và đăng ký Cloudinary
+builder.Services.Configure<CloudinarySettings>(builder.Configuration.GetSection("CloudinarySettings"));
+builder.Services.AddSingleton(sp =>
+{
+    var account = new Account(
+        builder.Configuration["CloudinarySettings:CloudName"],
+        builder.Configuration["CloudinarySettings:ApiKey"],
+        builder.Configuration["CloudinarySettings:ApiSecret"]);
+    return new Cloudinary(account);
+});
+
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -38,7 +56,7 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
-app.MapHub<ChatHub>("/chatHub"); // Thêm dòng này
+app.MapHub<ChatHub>("/chatHub");
 
 using (var scope = app.Services.CreateScope())
 {
