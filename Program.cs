@@ -4,6 +4,7 @@ using FacebookWebhookServerCore.Hubs;
 using Webhook_Message.Models;
 using CloudinaryDotNet;
 using Microsoft.AspNetCore.Http.Features;
+using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -95,6 +96,19 @@ using (var scope = app.Services.CreateScope())
     // Áp dụng migration cho DB của Zalo
     var zaloDb = scope.ServiceProvider.GetRequiredService<ZaloDbContext>();
     zaloDb.Database.Migrate();
+}
+
+// Kiểm tra thư mục wwwroot
+var webRoot = app.Environment.WebRootPath;
+Console.WriteLine($"WebRootPath: {webRoot}");
+if (Directory.Exists(webRoot))
+{
+    var files = Directory.GetFiles(webRoot, "*", SearchOption.AllDirectories);
+    Console.WriteLine($"Files in wwwroot: {string.Join(", ", files)}");
+}
+else
+{
+    Console.WriteLine("WebRootPath directory does not exist!");
 }
 
 app.Run();
