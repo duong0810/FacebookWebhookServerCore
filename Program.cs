@@ -20,6 +20,17 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 30 * 1024 * 1024; // 30 MB
 });
 
+// Thêm CORS để cho phép các request từ Zalo
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(builder =>
+    {
+        builder.AllowAnyOrigin()
+               .AllowAnyMethod()
+               .AllowAnyHeader();
+    });
+});
+
 // Đăng ký các dịch vụ cơ bản
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
@@ -50,7 +61,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Đăng ký DbContext cho Zalo
-// Chú ý: Cần thêm connection string "ZaloConnection" vào appsettings.json
 builder.Services.AddDbContext<ZaloDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("ZaloConnection") ??
                      "Data Source=zalo.db"));
@@ -64,7 +74,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseStaticFiles();
+// Thứ tự middleware quan trọng
+app.UseStaticFiles(); // Phục vụ file xác thực Zalo
+
+// Thêm CORS middleware
+app.UseCors();
+
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
