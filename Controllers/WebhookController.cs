@@ -263,9 +263,24 @@ namespace FacebookWebhookServerCore.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
+                    // SỬA LỖI: Thêm logic kiểm tra và tạo Customer cho Page
+                    var pageId = "807147519144166";
+                    var pageAsCustomer = await dbContext.Customers.FindAsync(pageId);
+                    if (pageAsCustomer == null)
+                    {
+                        pageAsCustomer = new Customer
+                        {
+                            FacebookId = pageId,
+                            Name = "My Page", // Hoặc tên Page của bạn
+                            AvatarUrl = "", // Thêm URL avatar của Page nếu có
+                            LastUpdated = DateTime.UtcNow
+                        };
+                        dbContext.Customers.Add(pageAsCustomer);
+                    }
+
                     var message = new Message
                     {
-                        SenderId = "807147519144166", // Page ID
+                        SenderId = pageId, // Page ID
                         RecipientId = recipientId,
                         Content = fileUrl,
                         Time = DateTime.UtcNow,
@@ -281,7 +296,9 @@ namespace FacebookWebhookServerCore.Controllers
                         RecipientId = message.RecipientId,
                         Content = message.Content,
                         Time = message.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                        Direction = message.Direction
+                        Direction = message.Direction,
+                        SenderName = pageAsCustomer.Name,
+                        SenderAvatar = pageAsCustomer.AvatarUrl
                     };
                     await _hubContext.Clients.All.SendAsync("ReceiveMessage", messageViewModel);
 
