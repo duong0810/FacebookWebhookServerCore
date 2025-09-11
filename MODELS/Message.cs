@@ -34,7 +34,9 @@ namespace Webhook_Message.Models
         public string Content { get; set; }
         public string Time { get; set; }
         public string Direction { get; set; }
-        public string SenderName { get; set; } 
-        public string SenderAvatar { get; set; } 
+        public string SenderName { get; set; }
+        public string SenderAvatar { get; set; }
+        public string Platform { get; set; } = string.Empty;
+
     }
 }
