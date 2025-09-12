@@ -8,5 +8,6 @@ namespace Webhook_Message.Data
         public ZaloDbContext(DbContextOptions<ZaloDbContext> options) : base(options) { }
         public DbSet<ZaloMessage> ZaloMessages { get; set; }
         public DbSet<ZaloCustomer> ZaloCustomers { get; set; }
+        public DbSet<ZaloTokenInfo> ZaloTokens { get; set; }
     }
 }

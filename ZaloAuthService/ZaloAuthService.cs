@@ -1,31 +1,26 @@
-﻿using System.Net.Http;
-using System.Threading.Tasks;
-using System.Collections.Generic;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System;
-using System.IO;
+using System.Collections.Generic;
+using System.Net.Http;
 using System.Text.Json;
-
-public class ZaloTokenInfo
-{
-    public string AccessToken { get; set; }
-    public string RefreshToken { get; set; }
-    public DateTime ExpireAt { get; set; }
-}
-
+using System.Threading.Tasks;
+using Webhook_Message.Data; 
+using Webhook_Message.Models;
 public class ZaloAuthService
 {
     private readonly IConfiguration _configuration;
-    private const string TokenFilePath = "zalo_token.json";
+    private readonly ZaloDbContext _dbContext;
 
-    public ZaloAuthService(IConfiguration configuration)
+    public ZaloAuthService(IConfiguration configuration, ZaloDbContext dbContext)
     {
         _configuration = configuration;
+        _dbContext = dbContext;
     }
 
     public async Task<string> GetAccessTokenAsync()
     {
-        var tokenInfo = LoadTokenInfo();
+        var tokenInfo = await _dbContext.ZaloTokens.FirstOrDefaultAsync();
         if (tokenInfo != null && tokenInfo.ExpireAt > DateTime.UtcNow.AddMinutes(1))
         {
             return tokenInfo.AccessToken;
@@ -35,7 +30,10 @@ public class ZaloAuthService
         if (tokenInfo != null && !string.IsNullOrEmpty(tokenInfo.RefreshToken))
         {
             var newToken = await RefreshAccessTokenAsync(tokenInfo.RefreshToken);
-            SaveTokenInfo(newToken);
+            tokenInfo.AccessToken = newToken.AccessToken;
+            tokenInfo.RefreshToken = newToken.RefreshToken;
+            tokenInfo.ExpireAt = newToken.ExpireAt;
+            await _dbContext.SaveChangesAsync();
             return newToken.AccessToken;
         }
 
@@ -64,9 +62,10 @@ public class ZaloAuthService
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
-            ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 60) // Trừ 1 phút để an toàn
+            ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 60)
         };
-        SaveTokenInfo(newTokenInfo);
+        _dbContext.ZaloTokens.Add(newTokenInfo);
+        await _dbContext.SaveChangesAsync();
         return accessToken;
     }
 
@@ -96,19 +95,5 @@ public class ZaloAuthService
             RefreshToken = newRefreshToken,
             ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 60)
         };
-    }
-
-    private ZaloTokenInfo LoadTokenInfo()
-    {
-        if (!File.Exists(TokenFilePath))
-            return null;
-        var json = File.ReadAllText(TokenFilePath);
-        return JsonSerializer.Deserialize<ZaloTokenInfo>(json);
-    }
-
-    private void SaveTokenInfo(ZaloTokenInfo info)
-    {
-        var json = JsonSerializer.Serialize(info);
-        File.WriteAllText(TokenFilePath, json);
     }
 }
