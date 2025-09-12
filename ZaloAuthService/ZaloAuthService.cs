@@ -47,19 +47,21 @@ namespace Webhook_Message.Services
             using var client = new HttpClient();
             var content = new FormUrlEncodedContent(new[]
             {
-                new KeyValuePair<string, string>("app_id", oaId),
-                new KeyValuePair<string, string>("app_secret", oaSecret),
-                new KeyValuePair<string, string>("grant_type", "client_credentials")
-            });
+        new KeyValuePair<string, string>("app_id", oaId),
+        new KeyValuePair<string, string>("app_secret", oaSecret),
+        new KeyValuePair<string, string>("grant_type", "client_credentials")
+    });
 
             var response = await client.PostAsync("https://oauth.zaloapp.com/v4/oa/access_token", content);
-            response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync();
 
             var obj = JsonDocument.Parse(json).RootElement;
-            var accessToken = obj.GetProperty("access_token").GetString();
+            if (!obj.TryGetProperty("access_token", out var accessTokenElem))
+                throw new Exception($"Zalo API không trả về access_token. Response: {json}");
+
+            var accessToken = accessTokenElem.GetString();
             var refreshToken = obj.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
-            var expiresIn = obj.GetProperty("expires_in").GetInt32();
+            var expiresIn = obj.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
 
             var newTokenInfo = new ZaloTokenInfo
             {
@@ -78,19 +80,21 @@ namespace Webhook_Message.Services
             using var client = new HttpClient();
             var content = new FormUrlEncodedContent(new[]
             {
-                new KeyValuePair<string, string>("app_id", oaId),
-                new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
-            });
+        new KeyValuePair<string, string>("app_id", oaId),
+        new KeyValuePair<string, string>("grant_type", "refresh_token"),
+        new KeyValuePair<string, string>("refresh_token", refreshToken)
+    });
 
             var response = await client.PostAsync("https://oauth.zaloapp.com/v4/oa/access_token", content);
-            response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync();
 
             var obj = JsonDocument.Parse(json).RootElement;
-            var accessToken = obj.GetProperty("access_token").GetString();
-            var newRefreshToken = obj.GetProperty("refresh_token").GetString();
-            var expiresIn = obj.GetProperty("expires_in").GetInt32();
+            if (!obj.TryGetProperty("access_token", out var accessTokenElem))
+                throw new Exception($"Zalo API không trả về access_token khi refresh. Response: {json}");
+
+            var accessToken = accessTokenElem.GetString();
+            var newRefreshToken = obj.TryGetProperty("refresh_token", out var nrt) ? nrt.GetString() : null;
+            var expiresIn = obj.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
 
             return new ZaloTokenInfo
             {

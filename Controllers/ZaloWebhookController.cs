@@ -62,6 +62,20 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
+        [HttpGet("check-token")]
+        public async Task<IActionResult> CheckToken([FromServices] ZaloDbContext dbContext)
+        {
+            var token = await dbContext.ZaloTokens.FirstOrDefaultAsync();
+            if (token == null)
+                return Ok("Chưa có token trong DB");
+            return Ok(new
+            {
+                AccessToken = string.IsNullOrEmpty(token.AccessToken) ? "Không có" : "Đã có",
+                RefreshToken = string.IsNullOrEmpty(token.RefreshToken) ? "Không có" : "Đã có",
+                ExpireAt = token.ExpireAt
+            });
+        }
+
         [HttpGet("messages")]
         public async Task<IActionResult> GetAllMessages([FromServices] ZaloDbContext dbContext)
         {
