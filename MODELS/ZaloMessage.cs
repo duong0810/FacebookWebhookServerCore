@@ -8,15 +8,15 @@ namespace Webhook_Message.Models
     {
         [Key]
         public int Id { get; set; }
-        public string SenderId { get; set; } = string.Empty;
-        public string RecipientId { get; set; } = string.Empty;
-        public string Content { get; set; } = string.Empty;
-        public DateTime Time { get; set; } = DateTime.UtcNow;
-        public string Direction { get; set; } = string.Empty; // "inbound" hoặc "outbound"
+        public string SenderId { get; set; }
+        public string RecipientId { get; set; }
+        public string Content { get; set; }
+        public DateTime Time { get; set; }
+        public string Direction { get; set; }
+        // "inbound" hoặc "outbound"
 
         [ForeignKey("SenderId")]
         public virtual ZaloCustomer? Sender { get; set; }
-
         [ForeignKey("RecipientId")]
         public virtual ZaloCustomer? Recipient { get; set; }
     }
