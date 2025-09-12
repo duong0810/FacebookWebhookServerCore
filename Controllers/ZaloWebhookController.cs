@@ -22,15 +22,22 @@ namespace FacebookWebhookServerCore.Controllers
         private readonly ILogger<ZaloWebhookController> _logger;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _oaId = "1830381847645653805"; // Cần thay thế với ID OA thật
-        private readonly string _oaSecret = "1sCw1J2pwKK3IFGoSQml"; // Cần thay thế với Secret thật
-        private readonly string _accessToken = "YOUR_ACCESS_TOKEN"; // Access token của Zalo OA
+        private readonly string _oaId; // Cần thay thế với ID OA thật
+        private readonly string _oaSecret; // Cần thay thế với Secret thật
+        private readonly string _accessToken; // Access token của Zalo OA
 
-        public ZaloWebhookController(ILogger<ZaloWebhookController> logger, IHubContext<ChatHub> hubContext, IHttpClientFactory httpClientFactory)
+        public ZaloWebhookController(
+            ILogger<ZaloWebhookController> logger,
+            IHubContext<ChatHub> hubContext,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration)
         {
             _logger = logger;
             _hubContext = hubContext;
             _httpClientFactory = httpClientFactory;
+            _oaId = configuration["ZaloOA:OaId"];
+            _oaSecret = configuration["ZaloOA:OaSecret"];
+            _accessToken = configuration["ZaloOA:AccessToken"];
         }
 
         // Endpoint để xác thực domain với Zalo
