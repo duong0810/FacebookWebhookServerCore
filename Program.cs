@@ -5,6 +5,7 @@ using Webhook_Message.Models;
 using CloudinaryDotNet;
 using Microsoft.AspNetCore.Http.Features;
 using System.IO;
+using Webhook_Message.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,7 +67,7 @@ builder.Services.AddDbContext<ZaloDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("ZaloConnection") ??
                      "Data Source=zalo.db"));
 
-
+builder.Services.AddScoped<ZaloAuthService>();
 
 var app = builder.Build();
 

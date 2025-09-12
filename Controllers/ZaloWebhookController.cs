@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Webhook_Message.Data;
 using Webhook_Message.Models;
+using Webhook_Message.Services;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -27,12 +28,14 @@ namespace FacebookWebhookServerCore.Controllers
         private readonly string _oaId; // Cần thay thế với ID OA thật
         private readonly string _oaSecret; // Cần thay thế với Secret thật
         private readonly string _accessToken; // Access token của Zalo OA
+        private readonly ZaloAuthService _zaloAuthService;
 
         public ZaloWebhookController(
             ILogger<ZaloWebhookController> logger,
             IHubContext<ChatHub> hubContext,
             IHttpClientFactory httpClientFactory,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ZaloAuthService zaloAuthService) // Thêm dòng này
         {
             _logger = logger;
             _hubContext = hubContext;
@@ -40,6 +43,7 @@ namespace FacebookWebhookServerCore.Controllers
             _oaId = configuration["ZaloOA:OaId"];
             _oaSecret = configuration["ZaloOA:OaSecret"];
             _accessToken = configuration["ZaloOA:AccessToken"];
+            _zaloAuthService = zaloAuthService; // Thêm dòng này
         }
 
         // Endpoint để xác thực domain với Zalo
@@ -203,7 +207,8 @@ namespace FacebookWebhookServerCore.Controllers
                     "application/json"
                 );
 
-                client.DefaultRequestHeaders.Add("access_token", _accessToken);
+                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
                 var response = await client.PostAsync(url, content);
 
                 if (response.IsSuccessStatusCode)
