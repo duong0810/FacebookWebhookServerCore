@@ -66,6 +66,8 @@ builder.Services.AddDbContext<ZaloDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("ZaloConnection") ??
                      "Data Source=zalo.db"));
 
+
+
 var app = builder.Build();
 
 // Cấu hình middleware pipeline
