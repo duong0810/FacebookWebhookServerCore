@@ -118,17 +118,16 @@ namespace FacebookWebhookServerCore.Controllers
             {
                 var sender = data.GetProperty("sender").GetProperty("id").GetString();
                 var message = data.GetProperty("message").GetProperty("text").GetString();
-                // Đọc timestamp là string, sau đó parse sang long
                 var timestampStr = data.GetProperty("timestamp").GetString();
                 var timestampLong = long.Parse(timestampStr);
                 var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
-                // Kiểm tra hoặc tạo ZaloCustomer
-                // Đảm bảo cả hai phía đều tồn tại trong ZaloCustomers
+                // Đảm bảo user gửi đã có trong ZaloCustomers
                 var customer = await GetOrCreateZaloCustomerAsync(dbContext, sender);
+                // Đảm bảo OA cũng đã có trong ZaloCustomers
                 var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                // Lưu message
+                // Lưu tin nhắn vào database
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = sender,
