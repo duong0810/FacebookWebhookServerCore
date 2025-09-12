@@ -124,9 +124,11 @@ namespace FacebookWebhookServerCore.Controllers
                 var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
                 // Kiểm tra hoặc tạo ZaloCustomer
+                // Đảm bảo cả hai phía đều tồn tại trong ZaloCustomers
                 var customer = await GetOrCreateZaloCustomerAsync(dbContext, sender);
+                var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                // Lưu tin nhắn vào database
+                // Lưu message
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = sender,
