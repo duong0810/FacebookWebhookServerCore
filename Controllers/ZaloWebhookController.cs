@@ -19,15 +19,13 @@ namespace FacebookWebhookServerCore.Controllers
 {
     [ApiController]
     [Route("api/zalo-webhook")]
-
     public class ZaloWebhookController : ControllerBase
     {
         private readonly ILogger<ZaloWebhookController> _logger;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly string _oaId; // Cần thay thế với ID OA thật
-        private readonly string _oaSecret; // Cần thay thế với Secret thật
-        private readonly string _accessToken; // Access token của Zalo OA
+        private readonly string _oaId;
+        private readonly string _oaSecret;
         private readonly ZaloAuthService _zaloAuthService;
 
         public ZaloWebhookController(
@@ -35,32 +33,26 @@ namespace FacebookWebhookServerCore.Controllers
             IHubContext<ChatHub> hubContext,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
-            ZaloAuthService zaloAuthService) // Thêm dòng này
+            ZaloAuthService zaloAuthService)
         {
             _logger = logger;
             _hubContext = hubContext;
             _httpClientFactory = httpClientFactory;
             _oaId = configuration["ZaloOA:OaId"];
             _oaSecret = configuration["ZaloOA:OaSecret"];
-            _accessToken = configuration["ZaloOA:AccessToken"];
-            _zaloAuthService = zaloAuthService; // Thêm dòng này
+            _zaloAuthService = zaloAuthService;
         }
 
-        // Endpoint để xác thực domain với Zalo
         [HttpGet]
         public IActionResult Get()
         {
             try
             {
                 _logger.LogInformation("Received Zalo domain verification request");
-
-                // Ghi log tất cả các query parameters để debug
                 foreach (var param in Request.Query)
                 {
                     _logger.LogInformation("Query parameter: {Key} = {Value}", param.Key, param.Value);
                 }
-
-                // Trả về 200 OK để xác nhận domain
                 return Ok("Zalo webhook verification successful");
             }
             catch (Exception ex)
@@ -90,13 +82,12 @@ namespace FacebookWebhookServerCore.Controllers
 
             return Ok(messages);
         }
-        // Endpoint để nhận webhook events từ Zalo
+
         [HttpPost]
         public async Task<IActionResult> Post([FromServices] ZaloDbContext dbContext)
         {
             try
             {
-                // Đọc nội dung request
                 string requestBody;
                 using (var reader = new StreamReader(Request.Body))
                 {
@@ -105,7 +96,6 @@ namespace FacebookWebhookServerCore.Controllers
 
                 _logger.LogInformation("Received Zalo webhook: {Body}", requestBody);
 
-                // Xác thực chữ ký từ Zalo (nếu có)
                 if (Request.Headers.TryGetValue("X-ZaloOA-Signature", out var signature))
                 {
                     if (!VerifySignature(requestBody, signature))
@@ -115,18 +105,14 @@ namespace FacebookWebhookServerCore.Controllers
                     }
                 }
 
-                // Parse dữ liệu JSON
                 using var jsonDoc = JsonDocument.Parse(requestBody);
                 var root = jsonDoc.RootElement;
 
-                // Kiểm tra xem có phải là event tin nhắn không
                 if (root.TryGetProperty("event_name", out var eventNameElement) &&
                     eventNameElement.GetString() == "user_send_text")
                 {
-                    // Xử lý tin nhắn văn bản từ user
                     await ProcessTextMessage(dbContext, root);
                 }
-                // Thêm xử lý cho các loại event khác sau này
 
                 return Ok(new { status = "success" });
             }
@@ -137,7 +123,6 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        // Hàm xử lý tin nhắn văn bản
         private async Task ProcessTextMessage(ZaloDbContext dbContext, JsonElement data)
         {
             try
@@ -148,12 +133,9 @@ namespace FacebookWebhookServerCore.Controllers
                 var timestampLong = long.Parse(timestampStr);
                 var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
-                // Đảm bảo user gửi đã có trong ZaloCustomers
                 var customer = await GetOrCreateZaloCustomerAsync(dbContext, sender);
-                // Đảm bảo OA cũng đã có trong ZaloCustomers
                 var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                // Lưu tin nhắn vào database
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = sender,
@@ -166,7 +148,6 @@ namespace FacebookWebhookServerCore.Controllers
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
 
-                // Thông báo qua SignalR
                 await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
                 {
                     Id = zaloMessage.Id,
@@ -186,7 +167,6 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        // API để gửi tin nhắn từ ứng dụng của bạn
         [HttpPost("send-message")]
         public async Task<IActionResult> SendMessage([FromServices] ZaloDbContext dbContext, [FromBody] ZaloMessageRequest request)
         {
@@ -213,7 +193,6 @@ namespace FacebookWebhookServerCore.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
-                    // Lưu tin nhắn đã gửi vào database
                     var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
                     var zaloMessage = new ZaloMessage
@@ -228,7 +207,6 @@ namespace FacebookWebhookServerCore.Controllers
                     dbContext.ZaloMessages.Add(zaloMessage);
                     await dbContext.SaveChangesAsync();
 
-                    // Thông báo qua SignalR
                     await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
                     {
                         Id = zaloMessage.Id,
@@ -255,7 +233,6 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        // Lấy hoặc tạo thông tin ZaloCustomer
         private async Task<ZaloCustomer> GetOrCreateZaloCustomerAsync(ZaloDbContext dbContext, string userId)
         {
             var customer = await dbContext.ZaloCustomers.FindAsync(userId);
@@ -267,7 +244,8 @@ namespace FacebookWebhookServerCore.Controllers
                     var client = _httpClientFactory.CreateClient();
                     var url = $"https://openapi.zalo.me/v2.0/oa/getprofile?data={{'user_id':'{userId}'}}";
 
-                    client.DefaultRequestHeaders.Add("access_token", _accessToken);
+                    var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                    client.DefaultRequestHeaders.Add("access_token", accessToken);
                     var response = await client.GetAsync(url);
 
                     if (response.IsSuccessStatusCode)
@@ -319,7 +297,6 @@ namespace FacebookWebhookServerCore.Controllers
             return customer;
         }
 
-        // Đảm bảo OA của bạn tồn tại trong database
         private async Task<ZaloCustomer> EnsureOACustomerExistsAsync(ZaloDbContext dbContext)
         {
             var oaCustomer = await dbContext.ZaloCustomers.FindAsync(_oaId);
@@ -328,8 +305,8 @@ namespace FacebookWebhookServerCore.Controllers
                 oaCustomer = new ZaloCustomer
                 {
                     ZaloId = _oaId,
-                    Name = "Zalo OA", // Tên của OA
-                    AvatarUrl = "", // URL Avatar của OA
+                    Name = "Zalo OA",
+                    AvatarUrl = "",
                     LastUpdated = DateTime.UtcNow
                 };
                 dbContext.ZaloCustomers.Add(oaCustomer);
@@ -338,7 +315,6 @@ namespace FacebookWebhookServerCore.Controllers
             return oaCustomer;
         }
 
-        // Hàm xác thực chữ ký từ Zalo
         private bool VerifySignature(string payload, string signature)
         {
             try
@@ -357,6 +333,4 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
     }
-
-  
 }
