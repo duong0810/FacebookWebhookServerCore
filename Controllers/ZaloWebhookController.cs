@@ -1,22 +1,24 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using FacebookWebhookServerCore.Hubs;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Globalization;
 using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.SignalR;
-using System.Security.Cryptography;
-using FacebookWebhookServerCore.Hubs;
 using Webhook_Message.Data;
 using Webhook_Message.Models;
-using System.Globalization;
-using System.Net.Http;
 
 namespace FacebookWebhookServerCore.Controllers
 {
     [ApiController]
     [Route("api/zalo-webhook")]
+
     public class ZaloWebhookController : ControllerBase
     {
         private readonly ILogger<ZaloWebhookController> _logger;
@@ -64,6 +66,26 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
+        [HttpGet("messages")]
+        public async Task<IActionResult> GetAllMessages([FromServices] ZaloDbContext dbContext)
+        {
+            var messages = await dbContext.ZaloMessages
+                .OrderByDescending(m => m.Time)
+                .ToListAsync();
+
+            return Ok(messages);
+        }
+
+        [HttpGet("messages/customer/{customerId}")]
+        public async Task<IActionResult> GetMessagesByCustomerId([FromServices] ZaloDbContext dbContext, string customerId)
+        {
+            var messages = await dbContext.ZaloMessages
+                .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
+                .OrderByDescending(m => m.Time)
+                .ToListAsync();
+
+            return Ok(messages);
+        }
         // Endpoint để nhận webhook events từ Zalo
         [HttpPost]
         public async Task<IActionResult> Post([FromServices] ZaloDbContext dbContext)
