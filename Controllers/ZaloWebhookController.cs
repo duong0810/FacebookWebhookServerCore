@@ -196,7 +196,9 @@ namespace FacebookWebhookServerCore.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = "https://openapi.zalo.me/v3.0/oa/message";
+                var url = "https://business.openapi.zalo.me/message/reply";
+
+                // Lưu ý: Bạn phải thay "TEMPLATE_ID" bằng ID template đã đăng ký trên Zalo OA
                 var payload = new
                 {
                     recipient = new { user_id = request.RecipientId },
@@ -211,12 +213,12 @@ namespace FacebookWebhookServerCore.Controllers
 
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
-                var response = await client.PostAsync(url, content);
 
+                var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Zalo API response: {ResponseContent}", responseContent);
 
-                // Kiểm tra mã lỗi trong responseContent (dù HTTP 200)
+                // Kiểm tra lỗi
                 try
                 {
                     using var doc = JsonDocument.Parse(responseContent);
