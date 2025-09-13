@@ -196,7 +196,7 @@ namespace FacebookWebhookServerCore.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = $"https://openapi.zalo.me/v2.0/oa/message";
+                var url = "https://openapi.zalo.me/v2.0/oa/message";
 
                 var payload = new
                 {
@@ -213,6 +213,28 @@ namespace FacebookWebhookServerCore.Controllers
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
                 var response = await client.PostAsync(url, content);
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogInformation("Zalo API response: {ResponseContent}", responseContent);
+
+                // Kiểm tra mã lỗi trong responseContent (dù HTTP 200)
+                try
+                {
+                    using var doc = JsonDocument.Parse(responseContent);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("error", out var errorElement) && errorElement.GetInt32() != 0)
+                    {
+                        var errorMsg = root.TryGetProperty("message", out var msgElement)
+                            ? msgElement.GetString()
+                            : "Unknown error";
+                        _logger.LogWarning("Zalo API error: {Error} - {Message}", errorElement.GetInt32(), errorMsg);
+                        return Ok(new { status = "error", details = responseContent });
+                    }
+                }
+                catch (Exception parseEx)
+                {
+                    _logger.LogWarning(parseEx, "Could not parse Zalo API response as JSON.");
+                }
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -242,12 +264,10 @@ namespace FacebookWebhookServerCore.Controllers
                         SenderAvatar = oaAsCustomer.AvatarUrl
                     });
 
-                    var responseContent = await response.Content.ReadAsStringAsync();
                     return Ok(new { status = "success", details = responseContent });
                 }
 
-                var errorResponse = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, new { status = "error", details = errorResponse });
+                return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
             }
             catch (Exception ex)
             {
