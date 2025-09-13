@@ -76,6 +76,16 @@ namespace FacebookWebhookServerCore.Controllers
             });
         }
 
+        [HttpPost("init-token")]
+        public async Task<IActionResult> InitToken([FromServices] ZaloDbContext dbContext, [FromBody] ZaloTokenInfo token)
+        {
+            dbContext.ZaloTokens.RemoveRange(dbContext.ZaloTokens);
+            await dbContext.SaveChangesAsync();
+            dbContext.ZaloTokens.Add(token);
+            await dbContext.SaveChangesAsync();
+            return Ok("Đã lưu access_token và refresh_token vào DB.");
+        }
+
         [HttpGet("messages")]
         public async Task<IActionResult> GetAllMessages([FromServices] ZaloDbContext dbContext)
         {
