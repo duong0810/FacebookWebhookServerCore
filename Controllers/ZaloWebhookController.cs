@@ -196,8 +196,7 @@ namespace FacebookWebhookServerCore.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = "https://openapi.zalo.me/v2.0/oa/message";
-
+                var url = "https://openapi.zalo.me/v3.0/oa/message";
                 var payload = new
                 {
                     recipient = new { user_id = request.RecipientId },
@@ -285,7 +284,7 @@ namespace FacebookWebhookServerCore.Controllers
                 try
                 {
                     var client = _httpClientFactory.CreateClient();
-                    var url = $"https://openapi.zalo.me/v2.0/oa/getprofile?data={{'user_id':'{userId}'}}";
+                    var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={{'user_id':'{userId}'}}";
 
                     var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                     client.DefaultRequestHeaders.Add("access_token", accessToken);
