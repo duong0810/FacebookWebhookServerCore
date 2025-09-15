@@ -64,8 +64,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Đăng ký DbContext cho Zalo
 builder.Services.AddDbContext<ZaloDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("ZaloConnection") ??
-                     "Data Source=zalo.db"));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("ZaloConnection")));
 
 builder.Services.AddScoped<ZaloAuthService>();
 
@@ -99,6 +98,10 @@ using (var scope = app.Services.CreateScope())
     // Áp dụng migration cho DB của Zalo
     var zaloDb = scope.ServiceProvider.GetRequiredService<ZaloDbContext>();
     zaloDb.Database.Migrate();
+
+    var zaloAuthService = scope.ServiceProvider.GetRequiredService<ZaloAuthService>();
+    zaloAuthService.GetAccessTokenAsync().GetAwaiter().GetResult();
+
 }
 
 // Kiểm tra thư mục wwwroot
