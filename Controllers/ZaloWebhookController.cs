@@ -196,9 +196,8 @@ namespace FacebookWebhookServerCore.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = "https://business.openapi.zalo.me/message/reply";
+                var url = "https://business.openapi.zalo.me/v2.0/oa/message"; // Sửa endpoint thành đúng theo Zalo OA API
 
-                // Lưu ý: Bạn phải thay "TEMPLATE_ID" bằng ID template đã đăng ký trên Zalo OA
                 var payload = new
                 {
                     recipient = new { user_id = request.RecipientId },
@@ -212,27 +211,32 @@ namespace FacebookWebhookServerCore.Controllers
                 );
 
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-                client.DefaultRequestHeaders.Add("access_token", accessToken);
+                client.DefaultRequestHeaders.Clear(); // Xóa header cũ để tránh xung đột
+                client.DefaultRequestHeaders.Add("access_token", accessToken); // Thêm access token
 
                 var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Zalo API response: {ResponseContent}", responseContent);
 
-                // Kiểm tra lỗi
+                // Kiểm tra và parse response một cách linh hoạt
                 try
                 {
                     using var doc = JsonDocument.Parse(responseContent);
                     var root = doc.RootElement;
-                    if (root.TryGetProperty("error", out var errorElement) && errorElement.GetInt32() != 0)
+                    if (root.TryGetProperty("error", out var errorElement))
                     {
-                        var errorMsg = root.TryGetProperty("message", out var msgElement)
-                            ? msgElement.GetString()
-                            : "Unknown error";
-                        _logger.LogWarning("Zalo API error: {Error} - {Message}", errorElement.GetInt32(), errorMsg);
-                        return Ok(new { status = "error", details = responseContent });
+                        var errorValue = errorElement.GetString() ?? errorElement.GetRawText();
+                        if (errorValue != "0")
+                        {
+                            var errorMsg = root.TryGetProperty("message", out var msgElement)
+                                ? msgElement.GetString()
+                                : "Unknown error";
+                            _logger.LogWarning("Zalo API error: {Error} - {Message}", errorValue, errorMsg);
+                            return Ok(new { status = "error", details = responseContent });
+                        }
                     }
                 }
-                catch (Exception parseEx)
+                catch (JsonException parseEx)
                 {
                     _logger.LogWarning(parseEx, "Could not parse Zalo API response as JSON.");
                 }
