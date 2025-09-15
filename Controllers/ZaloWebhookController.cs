@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Globalization;
@@ -76,14 +77,12 @@ namespace FacebookWebhookServerCore.Controllers
             });
         }
 
-
         [HttpGet("messages")]
         public async Task<IActionResult> GetAllMessages([FromServices] ZaloDbContext dbContext)
         {
             var messages = await dbContext.ZaloMessages
                 .OrderByDescending(m => m.Time)
                 .ToListAsync();
-
             return Ok(messages);
         }
 
@@ -94,7 +93,6 @@ namespace FacebookWebhookServerCore.Controllers
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
                 .ToListAsync();
-
             return Ok(messages);
         }
 
@@ -123,10 +121,23 @@ namespace FacebookWebhookServerCore.Controllers
                 using var jsonDoc = JsonDocument.Parse(requestBody);
                 var root = jsonDoc.RootElement;
 
-                if (root.TryGetProperty("event_name", out var eventNameElement) &&
-                    eventNameElement.GetString() == "user_send_text")
+                if (root.TryGetProperty("event_name", out var eventNameElement))
                 {
-                    await ProcessTextMessage(dbContext, root);
+                    var eventName = eventNameElement.GetString();
+                    switch (eventName)
+                    {
+                        case "user_send_text":
+                            await ProcessTextMessage(dbContext, root);
+                            break;
+
+                        case "oa_send_message":
+                            await ProcessSendMessageConfirmation(dbContext, root);
+                            break;
+
+                        default:
+                            _logger.LogWarning("Unknown event: {EventName}", eventName);
+                            break;
+                    }
                 }
 
                 return Ok(new { status = "success" });
@@ -137,6 +148,7 @@ namespace FacebookWebhookServerCore.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
         [HttpPost("init-token")]
         public async Task<IActionResult> InitToken([FromServices] ZaloDbContext dbContext, [FromBody] ZaloTokenInfo token)
         {
@@ -146,22 +158,23 @@ namespace FacebookWebhookServerCore.Controllers
             await dbContext.SaveChangesAsync();
             return Ok("Đã lưu access_token và refresh_token vào DB.");
         }
+
         private async Task ProcessTextMessage(ZaloDbContext dbContext, JsonElement data)
         {
             try
             {
-                var sender = data.GetProperty("sender").GetProperty("id").GetString();
+                var senderId = data.GetProperty("sender").GetProperty("id").GetString();
                 var message = data.GetProperty("message").GetProperty("text").GetString();
                 var timestampStr = data.GetProperty("timestamp").GetString();
                 var timestampLong = long.Parse(timestampStr);
                 var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
-                var customer = await GetOrCreateZaloCustomerAsync(dbContext, sender);
+                var customer = await GetOrCreateZaloCustomerAsync(dbContext, senderId);
                 var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
                 var zaloMessage = new ZaloMessage
                 {
-                    SenderId = sender,
+                    SenderId = senderId,
                     RecipientId = _oaId,
                     Content = message,
                     Time = timestamp,
@@ -190,13 +203,46 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
+        private async Task ProcessSendMessageConfirmation(ZaloDbContext dbContext, JsonElement data)
+        {
+            try
+            {
+                var userId = data.GetProperty("user_id").GetString();
+                var messageObj = data.GetProperty("message");
+                var msgId = messageObj.GetProperty("msg_id").GetString();
+                var text = messageObj.GetProperty("text").GetString();
+                var msgTime = messageObj.GetProperty("time").GetInt64();
+
+                var outboundMsg = await dbContext.ZaloMessages
+                    .FirstOrDefaultAsync(m => m.SenderId == _oaId && m.RecipientId == userId && m.Content == text && m.Direction == "outbound");
+                if (outboundMsg != null)
+                {
+                    outboundMsg.Status = "delivered";
+                    outboundMsg.DeliveredTime = DateTimeOffset.FromUnixTimeMilliseconds(msgTime).UtcDateTime;
+                    await dbContext.SaveChangesAsync();
+
+                    await _hubContext.Clients.All.SendAsync("MessageDelivered", new
+                    {
+                        MsgId = msgId,
+                        UserId = userId,
+                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(msgTime).AddHours(7).ToString("dd/MM/yyyy HH:mm:ss")
+                    });
+                }
+                _logger.LogInformation("Processed oa_send_message for {UserId}: {Text}", userId, text);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing send message confirmation");
+            }
+        }
+
         [HttpPost("send-message")]
         public async Task<IActionResult> SendMessage([FromServices] ZaloDbContext dbContext, [FromBody] ZaloMessageRequest request)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = "https://openapi.zalo.me/v3.0/oa/message";  // Endpoint OA API v3 cho gói Nâng cao
+                var url = "https://openapi.zalo.me/v3.0/oa/sendmessage"; // Sửa endpoint thành sendmessage
 
                 var payload = new
                 {
@@ -218,7 +264,6 @@ namespace FacebookWebhookServerCore.Controllers
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Zalo API response: {ResponseContent}", responseContent);
 
-                // Phần parse và xử lý lỗi giữ nguyên như trước
                 try
                 {
                     using var doc = JsonDocument.Parse(responseContent);
@@ -245,7 +290,6 @@ namespace FacebookWebhookServerCore.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
-                    // Phần lưu DB và SignalR giữ nguyên
                     var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
                     var zaloMessage = new ZaloMessage
@@ -356,7 +400,7 @@ namespace FacebookWebhookServerCore.Controllers
                 oaCustomer = new ZaloCustomer
                 {
                     ZaloId = _oaId,
-                    Name = "Zalo OA",
+                    Name = "KOSMOSOS software", // Tên OA của bạn
                     AvatarUrl = "",
                     LastUpdated = DateTime.UtcNow
                 };
@@ -374,7 +418,7 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
                     var computedSignature = BitConverter.ToString(hash).Replace("-", "").ToLower();
-                    return computedSignature == signature.ToString().ToLower();
+                    return computedSignature == signature.ToLower();
                 }
             }
             catch (Exception ex)
