@@ -25,63 +25,75 @@ namespace Webhook_Message.Services
 
         public async Task<string> GetAccessTokenAsync()
         {
-            var tokenInfo = await _dbContext.ZaloTokens.FirstOrDefaultAsync();
-            if (tokenInfo != null && tokenInfo.ExpireAt > DateTime.UtcNow.AddMinutes(5)) // Buffer 5 phút
+            try
             {
-                return tokenInfo.AccessToken;
-            }
+                Console.WriteLine("Bắt đầu kiểm tra token trong DB...");
+                var tokenInfo = await _dbContext.ZaloTokens.FirstOrDefaultAsync();
+                if (tokenInfo != null && tokenInfo.ExpireAt > DateTime.UtcNow.AddMinutes(5))
+                {
+                    Console.WriteLine("Token còn hạn, dùng lại token cũ.");
+                    return tokenInfo.AccessToken;
+                }
 
-            // Refresh token nếu có
-            if (tokenInfo != null && !string.IsNullOrEmpty(tokenInfo.RefreshToken))
-            {
-                var newToken = await RefreshAccessTokenAsync(tokenInfo.RefreshToken);
-                tokenInfo.AccessToken = newToken.AccessToken;
-                tokenInfo.RefreshToken = newToken.RefreshToken;
-                tokenInfo.ExpireAt = newToken.ExpireAt;
+                if (tokenInfo != null && !string.IsNullOrEmpty(tokenInfo.RefreshToken))
+                {
+                    Console.WriteLine("Token hết hạn, đang refresh token...");
+                    var newToken = await RefreshAccessTokenAsync(tokenInfo.RefreshToken);
+                    tokenInfo.AccessToken = newToken.AccessToken;
+                    tokenInfo.RefreshToken = newToken.RefreshToken;
+                    tokenInfo.ExpireAt = newToken.ExpireAt;
+                    await _dbContext.SaveChangesAsync();
+                    Console.WriteLine("Refresh token thành công.");
+                    return newToken.AccessToken;
+                }
+
+                var appId = _configuration["ZaloApp:AppId"];
+                var appSecret = _configuration["ZaloApp:AppSecret"];
+                if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret))
+                {
+                    Console.WriteLine("Thiếu AppId hoặc AppSecret trong cấu hình.");
+                    throw new Exception("Zalo AppId or AppSecret is missing in configuration.");
+                }
+
+                Console.WriteLine("Đang lấy token mới từ Zalo...");
+                var content = new FormUrlEncodedContent(new[]
+                {
+            new KeyValuePair<string, string>("app_id", appId),
+            new KeyValuePair<string, string>("app_secret", appSecret),
+            new KeyValuePair<string, string>("grant_type", "client_credentials")
+        });
+
+                var response = await _httpClient.PostAsync("https://oauth.zaloapp.com/v4/oa/access_token", content);
+                response.EnsureSuccessStatusCode();
+                var json = await response.Content.ReadAsStringAsync();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("access_token", out var accessTokenElem))
+                    throw new Exception($"Zalo API không trả về access_token. Response: {json}");
+
+                var accessToken = accessTokenElem.GetString();
+                var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+                var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
+
+                var newTokenInfo = new ZaloTokenInfo
+                {
+                    AccessToken = accessToken,
+                    RefreshToken = refreshToken,
+                    ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 300)
+                };
+                _dbContext.ZaloTokens.RemoveRange(_dbContext.ZaloTokens);
+                _dbContext.ZaloTokens.Add(newTokenInfo);
                 await _dbContext.SaveChangesAsync();
-                return newToken.AccessToken;
+                Console.WriteLine("Lưu token mới vào DB thành công.");
+
+                return accessToken;
             }
-
-            // Lấy token mới bằng app_id và app_secret
-            var appId = _configuration["ZaloApp:AppId"]; // Sửa config key
-            var appSecret = _configuration["ZaloApp:AppSecret"]; // Sửa config key
-
-            if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret))
+            catch (Exception ex)
             {
-                throw new Exception("Zalo AppId or AppSecret is missing in configuration.");
+                Console.WriteLine("Lỗi khi lấy/lưu token: " + ex.Message);
+                throw;
             }
-
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("app_id", appId),
-                new KeyValuePair<string, string>("app_secret", appSecret),
-                new KeyValuePair<string, string>("grant_type", "client_credentials")
-            });
-
-            var response = await _httpClient.PostAsync("https://oauth.zaloapp.com/v4/oa/access_token", content);
-            response.EnsureSuccessStatusCode(); // Ném exception nếu không thành công
-            var json = await response.Content.ReadAsStringAsync();
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("access_token", out var accessTokenElem))
-                throw new Exception($"Zalo API không trả về access_token. Response: {json}");
-
-            var accessToken = accessTokenElem.GetString();
-            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
-            var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
-
-            var newTokenInfo = new ZaloTokenInfo
-            {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 300) // Buffer 5 phút
-            };
-            _dbContext.ZaloTokens.RemoveRange(_dbContext.ZaloTokens); // Xóa token cũ (nếu cần)
-            _dbContext.ZaloTokens.Add(newTokenInfo);
-            await _dbContext.SaveChangesAsync();
-
-            return accessToken;
         }
 
         private async Task<ZaloTokenInfo> RefreshAccessTokenAsync(string refreshToken)
