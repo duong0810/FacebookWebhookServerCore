@@ -242,21 +242,25 @@ namespace FacebookWebhookServerCore.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = "https://openapi.zalo.me/v3.0/oa/sendmessage"; // Sửa endpoint thành sendmessage
-
+                var url = "https://openapi.zalo.me/v3.0/oa/message";
                 var payload = new
                 {
                     recipient = new { user_id = request.RecipientId },
                     message = new { text = request.Message }
                 };
 
+                var payloadJson = JsonSerializer.Serialize(payload);
+                _logger.LogInformation("Zalo payload gửi đi: {Payload}", payloadJson);
+
                 var content = new StringContent(
-                    JsonSerializer.Serialize(payload),
+                    payloadJson,
                     Encoding.UTF8,
                     "application/json"
                 );
 
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                _logger.LogInformation("Zalo access_token sử dụng: {AccessToken}", accessToken);
+
                 client.DefaultRequestHeaders.Clear();
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
 
