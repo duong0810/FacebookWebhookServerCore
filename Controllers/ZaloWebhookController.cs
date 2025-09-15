@@ -196,7 +196,7 @@ namespace FacebookWebhookServerCore.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = "https://business.openapi.zalo.me/v2.0/oa/message"; // Sửa endpoint thành đúng theo Zalo OA API
+                var url = "https://openapi.zalo.me/v3.0/oa/message";  // Endpoint OA API v3 cho gói Nâng cao
 
                 var payload = new
                 {
@@ -211,21 +211,23 @@ namespace FacebookWebhookServerCore.Controllers
                 );
 
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-                client.DefaultRequestHeaders.Clear(); // Xóa header cũ để tránh xung đột
-                client.DefaultRequestHeaders.Add("access_token", accessToken); // Thêm access token
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
 
                 var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Zalo API response: {ResponseContent}", responseContent);
 
-                // Kiểm tra và parse response một cách linh hoạt
+                // Phần parse và xử lý lỗi giữ nguyên như trước
                 try
                 {
                     using var doc = JsonDocument.Parse(responseContent);
                     var root = doc.RootElement;
                     if (root.TryGetProperty("error", out var errorElement))
                     {
-                        var errorValue = errorElement.GetString() ?? errorElement.GetRawText();
+                        var errorValue = errorElement.ValueKind == JsonValueKind.Number
+                            ? errorElement.GetInt32().ToString()
+                            : errorElement.GetString();
                         if (errorValue != "0")
                         {
                             var errorMsg = root.TryGetProperty("message", out var msgElement)
@@ -243,6 +245,7 @@ namespace FacebookWebhookServerCore.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
+                    // Phần lưu DB và SignalR giữ nguyên
                     var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
                     var zaloMessage = new ZaloMessage
