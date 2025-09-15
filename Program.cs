@@ -62,9 +62,6 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Đăng ký DbContext cho Zalo
-builder.Services.AddDbContext<ZaloDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("ZaloConnection")));
 
 builder.Services.AddScoped<ZaloAuthService>();
 
@@ -94,14 +91,6 @@ using (var scope = app.Services.CreateScope())
     // Áp dụng migration cho DB của Facebook
     var facebookDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     facebookDb.Database.Migrate();
-
-    // Áp dụng migration cho DB của Zalo
-    var zaloDb = scope.ServiceProvider.GetRequiredService<ZaloDbContext>();
-    zaloDb.Database.Migrate();
-
-    var zaloAuthService = scope.ServiceProvider.GetRequiredService<ZaloAuthService>();
-    zaloAuthService.GetAccessTokenAsync().GetAwaiter().GetResult();
-
 }
 
 // Kiểm tra thư mục wwwroot
