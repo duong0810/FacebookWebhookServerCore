@@ -376,7 +376,7 @@ namespace FacebookWebhookServerCore.Controllers
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error fetching Zalo user profile");
+                    _logger.LogError(ex, "Error fetching Zalo user profilee");
                 }
 
                 if (customer == null)
