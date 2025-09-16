@@ -384,7 +384,7 @@ namespace FacebookWebhookServerCore.Controllers
                     if (response.IsSuccessStatusCode)
                     {
                         var content = await response.Content.ReadAsStringAsync();
-                        _logger.LogInformation("Zalo profile response: {Content}", content); // Thêm log này
+                        _logger.LogInformation("Zalo profile response: {Content}", content);
 
                         using var doc = JsonDocument.Parse(content);
                         var data = doc.RootElement;
@@ -396,13 +396,7 @@ namespace FacebookWebhookServerCore.Controllers
                                 ? avatar.GetString()
                                 : "";
 
-                            _logger.LogInformation("AvatarUrl from Zalo: {AvatarUrl}", avatarUrl); // Thêm log này
-
-                            if (!string.IsNullOrEmpty(avatarUrl))
-                            {
-                                avatarUrl = await UploadAvatarToCloudinaryAsync(avatarUrl);
-                                _logger.LogInformation("AvatarUrl from Cloudinary: {AvatarUrl}", avatarUrl); // Thêm log này
-                            }
+                            _logger.LogInformation("AvatarUrl from Zalo: {AvatarUrl}", avatarUrl);
 
                             if (customer == null)
                             {
@@ -411,7 +405,7 @@ namespace FacebookWebhookServerCore.Controllers
                             }
 
                             customer.Name = name ?? $"User {userId}";
-                            customer.AvatarUrl = avatarUrl ?? "";
+                            customer.AvatarUrl = avatarUrl ?? ""; // Lưu trực tiếp link avatar từ Zalo
                             customer.LastUpdated = DateTime.UtcNow;
 
                             await dbContext.SaveChangesAsync();
