@@ -99,10 +99,12 @@ namespace Webhook_Message.Services
         private async Task<ZaloTokenInfo> RefreshAccessTokenAsync(string refreshToken)
         {
             var appId = _configuration["ZaloApp:AppId"];
+            var oaSecret = _configuration["ZaloOA:OaSecret"];
 
             var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("app_id", appId),
+                new KeyValuePair<string, string>("secret_key", oaSecret), // Thêm dòng này!
                 new KeyValuePair<string, string>("grant_type", "refresh_token"),
                 new KeyValuePair<string, string>("refresh_token", refreshToken)
             });
