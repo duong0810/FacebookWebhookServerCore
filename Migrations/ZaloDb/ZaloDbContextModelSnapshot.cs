@@ -35,7 +35,7 @@ namespace Webhook_Message.Migrations.ZaloDb
 
                     b.HasKey("ZaloId");
 
-                    b.ToTable("ZaloCustomers");
+                    b.ToTable("ZaloCustomers", (string)null);
                 });
 
             modelBuilder.Entity("Webhook_Message.Models.ZaloMessage", b =>
@@ -69,7 +69,7 @@ namespace Webhook_Message.Migrations.ZaloDb
 
                     b.HasIndex("SenderId");
 
-                    b.ToTable("ZaloMessages");
+                    b.ToTable("ZaloMessages", (string)null);
                 });
 
             modelBuilder.Entity("Webhook_Message.Models.ZaloTokenInfo", b =>
@@ -91,7 +91,7 @@ namespace Webhook_Message.Migrations.ZaloDb
 
                     b.HasKey("Id");
 
-                    b.ToTable("ZaloTokens");
+                    b.ToTable("ZaloTokens", (string)null);
                 });
 
             modelBuilder.Entity("Webhook_Message.Models.ZaloMessage", b =>
