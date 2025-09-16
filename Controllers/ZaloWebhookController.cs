@@ -1,4 +1,6 @@
-﻿using FacebookWebhookServerCore.Hubs;
+﻿using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
+using FacebookWebhookServerCore.Hubs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -28,13 +30,16 @@ namespace FacebookWebhookServerCore.Controllers
         private readonly string _oaId;
         private readonly string _oaSecret;
         private readonly ZaloAuthService _zaloAuthService;
+        private readonly Cloudinary _cloudinary;
 
         public ZaloWebhookController(
             ILogger<ZaloWebhookController> logger,
             IHubContext<ChatHub> hubContext,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
-            ZaloAuthService zaloAuthService)
+            ZaloAuthService zaloAuthService,
+            Cloudinary cloudinary)
+
         {
             _logger = logger;
             _hubContext = hubContext;
@@ -42,6 +47,7 @@ namespace FacebookWebhookServerCore.Controllers
             _oaId = configuration["ZaloOA:OaId"];
             _oaSecret = configuration["ZaloOA:OaSecret"];
             _zaloAuthService = zaloAuthService;
+            _cloudinary = cloudinary; 
         }
 
         [HttpGet]
@@ -370,8 +376,7 @@ namespace FacebookWebhookServerCore.Controllers
                 try
                 {
                     var client = _httpClientFactory.CreateClient();
-                    var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={{'user_id':'{userId}'}}";
-                    var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                    var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={Uri.EscapeDataString("{\"user_id\":\"" + userId + "\"}")}"; var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                     client.DefaultRequestHeaders.Add("access_token", accessToken);
                     var response = await client.GetAsync(url);
 
@@ -388,6 +393,12 @@ namespace FacebookWebhookServerCore.Controllers
                                 ? avatar.GetString()
                                 : "";
 
+                            // Upload avatar lên Cloudinary nếu có
+                            if (!string.IsNullOrEmpty(avatarUrl))
+                            {
+                                avatarUrl = await UploadAvatarToCloudinaryAsync(avatarUrl);
+                            }
+
                             if (customer == null)
                             {
                                 customer = new ZaloCustomer { ZaloId = userId };
@@ -396,6 +407,7 @@ namespace FacebookWebhookServerCore.Controllers
 
                             customer.Name = name ?? $"User {userId}";
                             customer.AvatarUrl = avatarUrl ?? "";
+
                             customer.LastUpdated = DateTime.UtcNow;
 
                             await dbContext.SaveChangesAsync();
@@ -458,6 +470,22 @@ namespace FacebookWebhookServerCore.Controllers
                 _logger.LogError(ex, "Error verifying Zalo signature");
                 return false;
             }
+        }
+        private async Task<string> UploadAvatarToCloudinaryAsync(string avatarUrl)
+        {
+            using var httpClient = _httpClientFactory.CreateClient();
+            using var stream = await httpClient.GetStreamAsync(avatarUrl);
+
+            var uploadParams = new ImageUploadParams
+            {
+                File = new FileDescription("avatar.jpg", stream)
+            };
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+            if (uploadResult.Error != null)
+                throw new Exception(uploadResult.Error.Message);
+
+            return uploadResult.SecureUrl.AbsoluteUri;
         }
     }
 }
