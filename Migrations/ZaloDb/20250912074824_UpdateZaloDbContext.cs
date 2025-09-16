@@ -7,6 +7,9 @@ namespace Webhook_Message.Migrations.ZaloDb
     /// <inheritdoc />
     public partial class UpdateZaloDbContext : Migration
     {
+        // Dòng này giúp migration không chạy trong transaction, phù hợp với SQLite
+        protected new bool? IsTransactional => false;
+
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
