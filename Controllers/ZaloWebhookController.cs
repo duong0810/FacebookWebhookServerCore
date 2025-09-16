@@ -376,13 +376,16 @@ namespace FacebookWebhookServerCore.Controllers
                 try
                 {
                     var client = _httpClientFactory.CreateClient();
-                    var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={Uri.EscapeDataString("{\"user_id\":\"" + userId + "\"}")}"; var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                    var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={Uri.EscapeDataString("{\"user_id\":\"" + userId + "\"}")}";
+                    var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                     client.DefaultRequestHeaders.Add("access_token", accessToken);
                     var response = await client.GetAsync(url);
 
                     if (response.IsSuccessStatusCode)
                     {
                         var content = await response.Content.ReadAsStringAsync();
+                        _logger.LogInformation("Zalo profile response: {Content}", content); // Thêm log này
+
                         using var doc = JsonDocument.Parse(content);
                         var data = doc.RootElement;
 
@@ -393,10 +396,12 @@ namespace FacebookWebhookServerCore.Controllers
                                 ? avatar.GetString()
                                 : "";
 
-                            // Upload avatar lên Cloudinary nếu có
+                            _logger.LogInformation("AvatarUrl from Zalo: {AvatarUrl}", avatarUrl); // Thêm log này
+
                             if (!string.IsNullOrEmpty(avatarUrl))
                             {
                                 avatarUrl = await UploadAvatarToCloudinaryAsync(avatarUrl);
+                                _logger.LogInformation("AvatarUrl from Cloudinary: {AvatarUrl}", avatarUrl); // Thêm log này
                             }
 
                             if (customer == null)
@@ -407,7 +412,6 @@ namespace FacebookWebhookServerCore.Controllers
 
                             customer.Name = name ?? $"User {userId}";
                             customer.AvatarUrl = avatarUrl ?? "";
-
                             customer.LastUpdated = DateTime.UtcNow;
 
                             await dbContext.SaveChangesAsync();
@@ -473,19 +477,34 @@ namespace FacebookWebhookServerCore.Controllers
         }
         private async Task<string> UploadAvatarToCloudinaryAsync(string avatarUrl)
         {
-            using var httpClient = _httpClientFactory.CreateClient();
-            using var stream = await httpClient.GetStreamAsync(avatarUrl);
-
-            var uploadParams = new ImageUploadParams
+            try
             {
-                File = new FileDescription("avatar.jpg", stream)
-            };
-            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+                _logger.LogInformation("Bắt đầu upload avatar lên Cloudinary: {AvatarUrl}", avatarUrl);
 
-            if (uploadResult.Error != null)
-                throw new Exception(uploadResult.Error.Message);
+                using var httpClient = _httpClientFactory.CreateClient();
+                using var stream = await httpClient.GetStreamAsync(avatarUrl);
 
-            return uploadResult.SecureUrl.AbsoluteUri;
+                var uploadParams = new ImageUploadParams
+                {
+                    File = new FileDescription("avatar.jpg", stream)
+                };
+                var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+                if (uploadResult.Error != null)
+                {
+                    _logger.LogError("Lỗi upload Cloudinary: {Error}", uploadResult.Error.Message);
+                    throw new Exception(uploadResult.Error.Message);
+                }
+
+                _logger.LogInformation("Upload thành công, link Cloudinary: {Url}", uploadResult.SecureUrl?.AbsoluteUri);
+
+                return uploadResult.SecureUrl?.AbsoluteUri ?? "";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Exception khi upload avatar lên Cloudinary");
+                return "";
+            }
         }
     }
 }
