@@ -82,8 +82,27 @@ namespace FacebookWebhookServerCore.Controllers
         {
             var messages = await dbContext.ZaloMessages
                 .OrderByDescending(m => m.Time)
+                .Include(m => m.Sender)
+                .Include(m => m.Recipient)
                 .ToListAsync();
-            return Ok(messages);
+
+            var result = messages.Select(m => new
+            {
+                m.Id,
+                m.SenderId,
+                m.RecipientId,
+                m.Content,
+                m.Time,
+                m.Direction,
+                SenderName = m.Sender?.Name,
+                SenderAvatar = m.Sender?.AvatarUrl,
+                RecipientName = m.Recipient?.Name,
+                RecipientAvatar = m.Recipient?.AvatarUrl,
+                m.Status,
+                m.DeliveredTime
+            });
+
+            return Ok(result);
         }
 
         [HttpGet("messages/customer/{customerId}")]
@@ -352,7 +371,6 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     var client = _httpClientFactory.CreateClient();
                     var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={{'user_id':'{userId}'}}";
-
                     var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                     client.DefaultRequestHeaders.Add("access_token", accessToken);
                     var response = await client.GetAsync(url);
@@ -386,7 +404,7 @@ namespace FacebookWebhookServerCore.Controllers
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error fetching Zalo user profilee");
+                    _logger.LogError(ex, "Error fetching Zalo user profile");
                 }
 
                 if (customer == null)
