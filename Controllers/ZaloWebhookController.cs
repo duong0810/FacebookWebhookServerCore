@@ -241,6 +241,12 @@ namespace FacebookWebhookServerCore.Controllers
         {
             try
             {
+                if (string.IsNullOrEmpty(request.RecipientId) || string.IsNullOrEmpty(request.Message))
+                {
+                    _logger.LogWarning("Invalid request: RecipientId or Message is empty.");
+                    return BadRequest(new { status = "error", details = "RecipientId and Message are required." });
+                }
+
                 var client = _httpClientFactory.CreateClient();
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 var payload = new
@@ -252,14 +258,16 @@ namespace FacebookWebhookServerCore.Controllers
                 var payloadJson = JsonSerializer.Serialize(payload);
                 _logger.LogInformation("Zalo payload gửi đi: {Payload}", payloadJson);
 
-                var content = new StringContent(
-                    payloadJson,
-                    Encoding.UTF8,
-                    "application/json"
-                );
+                var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
+                // Lấy access token và log chi tiết
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-                _logger.LogInformation("Zalo access_token sử dụng: {AccessToken}", accessToken);
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    _logger.LogError("Failed to get access token.");
+                    return StatusCode(500, new { status = "error", details = "Failed to retrieve access token." });
+                }
+                _logger.LogInformation("Zalo access_token sử dụng: {AccessToken}", accessToken.Substring(0, 10) + "...");
 
                 client.DefaultRequestHeaders.Clear();
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
@@ -268,6 +276,7 @@ namespace FacebookWebhookServerCore.Controllers
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Zalo API response: {ResponseContent}", responseContent);
 
+                // Xử lý response từ Zalo
                 try
                 {
                     using var doc = JsonDocument.Parse(responseContent);
@@ -290,6 +299,7 @@ namespace FacebookWebhookServerCore.Controllers
                 catch (JsonException parseEx)
                 {
                     _logger.LogWarning(parseEx, "Could not parse Zalo API response as JSON.");
+                    return StatusCode(500, new { status = "error", details = "Invalid response format from Zalo API." });
                 }
 
                 if (response.IsSuccessStatusCode)
