@@ -392,9 +392,13 @@ namespace FacebookWebhookServerCore.Controllers
                 try
                 {
                     var client = _httpClientFactory.CreateClient();
-                    var url = $"https://openapi.zalo.me/v3.0/oa/getprofile?data={Uri.EscapeDataString("{\"user_id\":\"" + userId + "\"}")}";
                     var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+
+                    // Sử dụng API v2.0 và truyền user_id qua query string
+                    var url = $"https://openapi.zalo.me/v2.0/oa/getprofile?user_id={userId}";
+                    client.DefaultRequestHeaders.Clear();
                     client.DefaultRequestHeaders.Add("access_token", accessToken);
+
                     var response = await client.GetAsync(url);
 
                     if (response.IsSuccessStatusCode)
@@ -412,27 +416,6 @@ namespace FacebookWebhookServerCore.Controllers
                                 ? avatar.GetString()
                                 : "";
 
-                            if (string.IsNullOrEmpty(avatarUrl))
-                            {
-                                _logger.LogWarning("AvatarUrl trả về từ Zalo API bị rỗng cho userId: {UserId}", userId);
-                            }
-                            else
-                            {
-                                _logger.LogInformation("AvatarUrl lấy được từ Zalo API: {AvatarUrl}", avatarUrl);
-
-                                // Nếu muốn upload lên Cloudinary, kiểm tra kết quả upload
-                                var cloudinaryUrl = await UploadAvatarToCloudinaryAsync(avatarUrl);
-                                if (string.IsNullOrEmpty(cloudinaryUrl))
-                                {
-                                    _logger.LogWarning("Upload avatar lên Cloudinary thất bại, dùng link gốc từ Zalo.");
-                                }
-                                else
-                                {
-                                    avatarUrl = cloudinaryUrl;
-                                    _logger.LogInformation("AvatarUrl sau khi upload Cloudinary: {AvatarUrl}", avatarUrl);
-                                }
-                            }
-
                             if (customer == null)
                             {
                                 customer = new ZaloCustomer { ZaloId = userId };
@@ -444,8 +427,6 @@ namespace FacebookWebhookServerCore.Controllers
                             customer.LastUpdated = DateTime.UtcNow;
 
                             await dbContext.SaveChangesAsync();
-
-                            // Log sau khi lưu DB
                             _logger.LogInformation("Đã lưu avatar vào DB cho userId: {UserId}, AvatarUrl: {AvatarUrl}", userId, customer.AvatarUrl);
                         }
                         else
