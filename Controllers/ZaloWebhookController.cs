@@ -98,14 +98,13 @@ namespace FacebookWebhookServerCore.Controllers
                 m.SenderId,
                 m.RecipientId,
                 m.Content,
-                Time = m.Time.ToString("dd/MM/yyyy HH:mm:ss"), // Định dạng lại ngày giờ
+                Time = m.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss"),
                 m.Direction,
                 SenderName = m.Sender?.Name,
                 SenderAvatar = m.Sender?.AvatarUrl,
                 RecipientName = m.Recipient?.Name,
                 RecipientAvatar = m.Recipient?.AvatarUrl
             });
-
             return Ok(result);
         }
 
@@ -115,8 +114,25 @@ namespace FacebookWebhookServerCore.Controllers
             var messages = await dbContext.ZaloMessages
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
+                .Include(m => m.Sender)
+                .Include(m => m.Recipient)
                 .ToListAsync();
-            return Ok(messages);
+
+            var result = messages.Select(m => new
+            {
+                m.Id,
+                m.SenderId,
+                m.RecipientId,
+                m.Content,
+                Time = m.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss"),
+                m.Direction,
+                SenderName = m.Sender?.Name,
+                SenderAvatar = m.Sender?.AvatarUrl,
+                RecipientName = m.Recipient?.Name,
+                RecipientAvatar = m.Recipient?.AvatarUrl
+            });
+
+            return Ok(result);
         }
 
         [HttpPost]
@@ -213,7 +229,7 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderId = zaloMessage.SenderId,
                     RecipientId = zaloMessage.RecipientId,
                     Content = zaloMessage.Content,
-                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Time = zaloMessage.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
                     Direction = zaloMessage.Direction,
                     SenderName = customer.Name,
                     SenderAvatar = customer.AvatarUrl
@@ -247,7 +263,10 @@ namespace FacebookWebhookServerCore.Controllers
                     {
                         MsgId = msgId,
                         UserId = userId,
-                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(msgTime).AddHours(7).ToString("dd/MM/yyyy HH:mm:ss")
+                        Timestamp = TimeZoneInfo.ConvertTimeFromUtc(
+                            DateTimeOffset.FromUnixTimeMilliseconds(msgTime).UtcDateTime,
+                            TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time")
+                        ).ToString("dd/MM/yyyy HH:mm:ss")
                     });
                 }
                 _logger.LogInformation("Processed oa_send_message for {UserId}: {Text}", userId, text);
@@ -346,7 +365,7 @@ namespace FacebookWebhookServerCore.Controllers
                         SenderId = zaloMessage.SenderId,
                         RecipientId = zaloMessage.RecipientId,
                         Content = zaloMessage.Content,
-                        Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Time = zaloMessage.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
                         Direction = zaloMessage.Direction,
                         SenderName = oaAsCustomer.Name,
                         SenderAvatar = oaAsCustomer.AvatarUrl

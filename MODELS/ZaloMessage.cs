@@ -19,6 +19,15 @@ namespace Webhook_Message.Models
         public virtual ZaloCustomer? Sender { get; set; }
         [ForeignKey("RecipientId")]
         public virtual ZaloCustomer? Recipient { get; set; }
-     
+
+        [NotMapped]
+        public DateTime TimeVietnam
+        {
+            get
+            {
+                var vietnamTimeZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
+                return TimeZoneInfo.ConvertTimeFromUtc(Time, vietnamTimeZone);
+            }
+        }
     }
 }
