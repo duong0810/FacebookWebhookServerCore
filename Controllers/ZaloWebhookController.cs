@@ -336,15 +336,17 @@ namespace FacebookWebhookServerCore.Controllers
                             var errorMsg = root.TryGetProperty("message", out var msgElement)
                                 ? msgElement.GetString()
                                 : "Unknown error";
-                            _logger.LogWarning("Zalo API error: {Error} - {Message}", errorValue, errorMsg);
-                            return Ok(new { status = "error", details = responseContent });
+                            _logger.LogWarning("Zalo API error (send-attachment): {Error} - {Message}", errorValue, errorMsg);
+                        }
+                        else
+                        {
+                            _logger.LogInformation("Zalo API gửi file/hình ảnh thành công.");
                         }
                     }
                 }
-                catch (JsonException parseEx)
+                catch (JsonException ex)
                 {
-                    _logger.LogWarning(parseEx, "Could not parse Zalo API response as JSON.");
-                    return StatusCode(500, new { status = "error", details = "Invalid response format from Zalo API." });
+                    _logger.LogError(ex, "Lỗi parse responseContent từ Zalo API (send-attachment)");
                 }
 
                 if (response.IsSuccessStatusCode)
