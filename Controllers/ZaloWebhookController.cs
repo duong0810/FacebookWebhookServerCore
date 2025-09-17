@@ -613,25 +613,34 @@ namespace FacebookWebhookServerCore.Controllers
                 var payload = firstAttachment.GetProperty("payload");
                 var fileUrl = payload.GetProperty("url").GetString();
                 var fileName = payload.GetProperty("name").GetString();
-                var fileType = payload.GetProperty("type").GetString();
+                var fileType = payload.GetProperty("type").GetString(); // ví dụ: "jpg", "png", "docx", ...
                 var timestampStr = data.GetProperty("timestamp").GetString();
                 var timestampLong = long.Parse(timestampStr);
                 var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
                 var customer = await GetOrCreateZaloCustomerAsync(dbContext, senderId);
 
+                // Xác định loại file là hình ảnh hay file thường
+                var isImage = fileType.Equals("jpg", StringComparison.OrdinalIgnoreCase)
+                    || fileType.Equals("jpeg", StringComparison.OrdinalIgnoreCase)
+                    || fileType.Equals("png", StringComparison.OrdinalIgnoreCase)
+                    || fileType.Equals("gif", StringComparison.OrdinalIgnoreCase)
+                    || fileType.Equals("bmp", StringComparison.OrdinalIgnoreCase)
+                    || fileType.Equals("webp", StringComparison.OrdinalIgnoreCase);
+
                 // Lưu vào DB
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = senderId,
                     RecipientId = _oaId,
-                    Content = fileUrl, // Có thể lưu thêm tên file nếu muốn
+                    Content = fileUrl,
                     Time = timestamp,
                     Direction = "inbound"
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
 
+                // Phát lên SignalR, truyền thêm thông tin loại file
                 await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
                 {
                     Id = zaloMessage.Id,
@@ -643,7 +652,8 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderName = customer.Name,
                     SenderAvatar = customer.AvatarUrl,
                     FileName = fileName,
-                    FileType = fileType
+                    FileType = fileType,
+                    IsImage = isImage
                 });
             }
             catch (Exception ex)
