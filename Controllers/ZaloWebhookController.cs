@@ -396,7 +396,26 @@ namespace FacebookWebhookServerCore.Controllers
                                 ? avatar.GetString()
                                 : "";
 
-                            _logger.LogInformation("AvatarUrl from Zalo: {AvatarUrl}", avatarUrl);
+                            if (string.IsNullOrEmpty(avatarUrl))
+                            {
+                                _logger.LogWarning("AvatarUrl trả về từ Zalo API bị rỗng cho userId: {UserId}", userId);
+                            }
+                            else
+                            {
+                                _logger.LogInformation("AvatarUrl lấy được từ Zalo API: {AvatarUrl}", avatarUrl);
+
+                                // Nếu muốn upload lên Cloudinary, kiểm tra kết quả upload
+                                var cloudinaryUrl = await UploadAvatarToCloudinaryAsync(avatarUrl);
+                                if (string.IsNullOrEmpty(cloudinaryUrl))
+                                {
+                                    _logger.LogWarning("Upload avatar lên Cloudinary thất bại, dùng link gốc từ Zalo.");
+                                }
+                                else
+                                {
+                                    avatarUrl = cloudinaryUrl;
+                                    _logger.LogInformation("AvatarUrl sau khi upload Cloudinary: {AvatarUrl}", avatarUrl);
+                                }
+                            }
 
                             if (customer == null)
                             {
@@ -405,16 +424,27 @@ namespace FacebookWebhookServerCore.Controllers
                             }
 
                             customer.Name = name ?? $"User {userId}";
-                            customer.AvatarUrl = avatarUrl ?? ""; // Lưu trực tiếp link avatar từ Zalo
+                            customer.AvatarUrl = avatarUrl ?? "";
                             customer.LastUpdated = DateTime.UtcNow;
 
                             await dbContext.SaveChangesAsync();
+
+                            // Log sau khi lưu DB
+                            _logger.LogInformation("Đã lưu avatar vào DB cho userId: {UserId}, AvatarUrl: {AvatarUrl}", userId, customer.AvatarUrl);
                         }
+                        else
+                        {
+                            _logger.LogWarning("Zalo API trả về lỗi cho userId: {UserId}, error: {Error}", userId, error.GetInt32());
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogError("Không gọi được Zalo API getprofile cho userId: {UserId}, StatusCode: {StatusCode}", userId, response.StatusCode);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error fetching Zalo user profile");
+                    _logger.LogError(ex, "Exception khi lấy profile Zalo cho userId: {UserId}", userId);
                 }
 
                 if (customer == null)
@@ -428,7 +458,12 @@ namespace FacebookWebhookServerCore.Controllers
                     };
                     dbContext.ZaloCustomers.Add(customer);
                     await dbContext.SaveChangesAsync();
+                    _logger.LogWarning("Tạo mới customer nhưng không có avatar cho userId: {UserId}", userId);
                 }
+            }
+            else
+            {
+                _logger.LogInformation("Customer đã có trong DB, AvatarUrl: {AvatarUrl}", customer.AvatarUrl);
             }
 
             return customer;
