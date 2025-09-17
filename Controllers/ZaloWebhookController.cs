@@ -567,7 +567,10 @@ namespace FacebookWebhookServerCore.Controllers
                     Time = zaloMessage.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
                     Direction = zaloMessage.Direction,
                     SenderName = oaAsCustomer.Name,
-                    SenderAvatar = oaAsCustomer.AvatarUrl
+                    SenderAvatar = oaAsCustomer.AvatarUrl,
+                    FileName = file.FileName,
+                    FileType = file.ContentType,
+                    IsImage = attachmentType == "image" // Thêm dòng này
                 });
 
                 if (response.IsSuccessStatusCode)
