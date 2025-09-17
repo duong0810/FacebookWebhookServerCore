@@ -518,15 +518,13 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
-                // Upload file lên Cloudinary
                 var fileUrl = await UploadFileToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
 
-                // Đảm bảo OA và người nhận tồn tại trong bảng ZaloCustomer
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
-                // Tạo payload gửi lên Zalo OA API
+                // Sửa payload đúng chuẩn Zalo OA API
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 var payload = new
                 {
@@ -535,7 +533,7 @@ namespace FacebookWebhookServerCore.Controllers
                     {
                         attachment = new
                         {
-                            type = attachmentType, // "image" hoặc "file"
+                            type = attachmentType,
                             payload = new { url = fileUrl }
                         }
                     }
@@ -551,7 +549,6 @@ namespace FacebookWebhookServerCore.Controllers
                 var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
-                // Lưu vào DB
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = _oaId,
