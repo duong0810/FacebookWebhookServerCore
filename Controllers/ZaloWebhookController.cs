@@ -724,5 +724,13 @@ namespace FacebookWebhookServerCore.Controllers
                 throw;
             }
         }
+
+        private string GetAttachmentType(string contentType)
+        {
+            if (contentType.StartsWith("image/")) return "image";
+            if (contentType.StartsWith("video/")) return "video";
+            if (contentType.StartsWith("audio/")) return "audio";
+            return "file";
+        }
     }
 }
