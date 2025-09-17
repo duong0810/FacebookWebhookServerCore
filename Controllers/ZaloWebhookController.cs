@@ -168,15 +168,15 @@ namespace FacebookWebhookServerCore.Controllers
                         case "user_send_text":
                             await ProcessTextMessage(dbContext, root);
                             break;
-
                         case "oa_send_message":
                             await ProcessSendMessageConfirmation(dbContext, root);
                             break;
-
-                        case "user_send_file": // THÊM CASE NÀY
+                        case "user_send_file":
                             await ProcessFileMessage(dbContext, root);
                             break;
-
+                        case "user_send_image": // THÊM CASE NÀY
+                            await ProcessImageMessage(dbContext, root);
+                            break;
                         default:
                             _logger.LogWarning("Unknown event: {EventName}", eventName);
                             break;
@@ -662,6 +662,54 @@ namespace FacebookWebhookServerCore.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing file message");
+                throw;
+            }
+        }
+        private async Task ProcessImageMessage(ZaloDbContext dbContext, JsonElement data)
+        {
+            try
+            {
+                var senderId = data.GetProperty("sender").GetProperty("id").GetString();
+                var timestampStr = data.GetProperty("timestamp").GetString();
+                var timestampLong = long.Parse(timestampStr);
+                var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
+
+                var attachments = data.GetProperty("message").GetProperty("attachments");
+                foreach (var attachment in attachments.EnumerateArray())
+                {
+                    var payload = attachment.GetProperty("payload");
+                    var imageUrl = payload.GetProperty("url").GetString();
+
+                    var customer = await GetOrCreateZaloCustomerAsync(dbContext, senderId);
+
+                    var zaloMessage = new ZaloMessage
+                    {
+                        SenderId = senderId,
+                        RecipientId = _oaId,
+                        Content = imageUrl, // Lưu URL ảnh vào Content
+                        Time = timestamp,
+                        Direction = "inbound"
+                    };
+
+                    dbContext.ZaloMessages.Add(zaloMessage);
+                    await dbContext.SaveChangesAsync();
+
+                    await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                    {
+                        Id = zaloMessage.Id,
+                        SenderId = zaloMessage.SenderId,
+                        RecipientId = zaloMessage.RecipientId,
+                        Content = zaloMessage.Content,
+                        Time = zaloMessage.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Direction = zaloMessage.Direction,
+                        SenderName = customer.Name,
+                        SenderAvatar = customer.AvatarUrl
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing image message");
                 throw;
             }
         }
