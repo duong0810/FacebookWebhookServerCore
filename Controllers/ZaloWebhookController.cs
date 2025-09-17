@@ -522,6 +522,10 @@ namespace FacebookWebhookServerCore.Controllers
                 var fileUrl = await UploadFileToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
 
+                // Đảm bảo OA và người nhận tồn tại trong bảng ZaloCustomer
+                var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
+                var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
+
                 // Tạo payload gửi lên Zalo OA API
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 var payload = new
@@ -549,7 +553,6 @@ namespace FacebookWebhookServerCore.Controllers
                 var responseContent = await response.Content.ReadAsStringAsync();
 
                 // Lưu vào DB
-                var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = _oaId,
@@ -584,7 +587,7 @@ namespace FacebookWebhookServerCore.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Lỗi gửi file/hình ảnh tới Zalo");
-                return StatusCode(500, new { error = ex.Message });
+                return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
             }
         }
         private async Task<string> UploadFileToCloudinaryAsync(IFormFile file)
