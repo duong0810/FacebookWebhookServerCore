@@ -98,14 +98,12 @@ namespace FacebookWebhookServerCore.Controllers
                 m.SenderId,
                 m.RecipientId,
                 m.Content,
-                m.Time,
+                Time = m.Time.ToString("dd/MM/yyyy HH:mm:ss"), // Định dạng lại ngày giờ
                 m.Direction,
                 SenderName = m.Sender?.Name,
                 SenderAvatar = m.Sender?.AvatarUrl,
                 RecipientName = m.Recipient?.Name,
-                RecipientAvatar = m.Recipient?.AvatarUrl,
-                m.Status,
-                m.DeliveredTime
+                RecipientAvatar = m.Recipient?.AvatarUrl
             });
 
             return Ok(result);

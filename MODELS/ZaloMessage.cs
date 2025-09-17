@@ -19,7 +19,6 @@ namespace Webhook_Message.Models
         public virtual ZaloCustomer? Sender { get; set; }
         [ForeignKey("RecipientId")]
         public virtual ZaloCustomer? Recipient { get; set; }
-        public String Status { get; set; } = "pending"; // "pending", "sent", "failed"
-        public DateTime DeliveredTime { get; internal set; }
+     
     }
 }
