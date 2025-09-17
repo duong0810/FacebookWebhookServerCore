@@ -534,9 +534,10 @@ namespace FacebookWebhookServerCore.Controllers
                     recipient = new { user_id = recipientId },
                     message = new
                     {
+                        text = file.FileName, // hoặc một mô tả ngắn, VD: "Ảnh gửi từ OA"
                         attachment = new
                         {
-                            type = attachmentType, // "image", "file", "video"...
+                            type = attachmentType,
                             payload = new { url = fileUrl }
                         }
                     }
