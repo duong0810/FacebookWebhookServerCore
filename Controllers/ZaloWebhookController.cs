@@ -47,7 +47,7 @@ namespace FacebookWebhookServerCore.Controllers
             _oaId = configuration["ZaloOA:OaId"];
             _oaSecret = configuration["ZaloOA:OaSecret"];
             _zaloAuthService = zaloAuthService;
-            _cloudinary = cloudinary; 
+            _cloudinary = cloudinary;
         }
 
         [HttpGet]
@@ -171,6 +171,10 @@ namespace FacebookWebhookServerCore.Controllers
 
                         case "oa_send_message":
                             await ProcessSendMessageConfirmation(dbContext, root);
+                            break;
+
+                        case "user_send_file": // THÊM CASE NÀY
+                            await ProcessFileMessage(dbContext, root);
                             break;
 
                         default:
@@ -384,87 +388,87 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         private async Task<ZaloCustomer> GetOrCreateZaloCustomerAsync(ZaloDbContext dbContext, string userId)
-{
-    var customer = await dbContext.ZaloCustomers.FindAsync(userId);
-
-    if (customer == null || customer.LastUpdated < DateTime.UtcNow.AddDays(-1))
-    {
-        try
         {
-            var client = _httpClientFactory.CreateClient();
-            var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+            var customer = await dbContext.ZaloCustomers.FindAsync(userId);
 
-            // Sử dụng API v2.0 và truyền user_id qua query string
-            var url = $"https://openapi.zalo.me/v2.0/oa/getprofile?user_id={userId}";
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("access_token", accessToken);
-
-            var response = await client.GetAsync(url);
-
-            if (response.IsSuccessStatusCode)
+            if (customer == null || customer.LastUpdated < DateTime.UtcNow.AddDays(-1))
             {
-                var content = await response.Content.ReadAsStringAsync();
-                _logger.LogInformation("Zalo profile response: {Content}", content);
-
-                using var doc = JsonDocument.Parse(content);
-                var data = doc.RootElement;
-
-                if (data.TryGetProperty("error", out var error) && error.GetInt32() == 0)
+                try
                 {
-                    var name = data.GetProperty("data").GetProperty("display_name").GetString();
-                    var avatarUrl = data.GetProperty("data").TryGetProperty("avatar", out var avatar)
-                        ? avatar.GetString()
-                        : "";
+                    var client = _httpClientFactory.CreateClient();
+                    var accessToken = await _zaloAuthService.GetAccessTokenAsync();
 
-                    if (customer == null)
+                    // Sử dụng API v2.0 và truyền user_id qua query string
+                    var url = $"https://openapi.zalo.me/v2.0/oa/getprofile?user_id={userId}";
+                    client.DefaultRequestHeaders.Clear();
+                    client.DefaultRequestHeaders.Add("access_token", accessToken);
+
+                    var response = await client.GetAsync(url);
+
+                    if (response.IsSuccessStatusCode)
                     {
-                        customer = new ZaloCustomer { ZaloId = userId };
-                        dbContext.ZaloCustomers.Add(customer);
+                        var content = await response.Content.ReadAsStringAsync();
+                        _logger.LogInformation("Zalo profile response: {Content}", content);
+
+                        using var doc = JsonDocument.Parse(content);
+                        var data = doc.RootElement;
+
+                        if (data.TryGetProperty("error", out var error) && error.GetInt32() == 0)
+                        {
+                            var name = data.GetProperty("data").GetProperty("display_name").GetString();
+                            var avatarUrl = data.GetProperty("data").TryGetProperty("avatar", out var avatar)
+                                ? avatar.GetString()
+                                : "";
+
+                            if (customer == null)
+                            {
+                                customer = new ZaloCustomer { ZaloId = userId };
+                                dbContext.ZaloCustomers.Add(customer);
+                            }
+
+                            customer.Name = name ?? $"User {userId}";
+                            customer.AvatarUrl = avatarUrl ?? "";
+                            customer.LastUpdated = DateTime.UtcNow;
+
+                            await dbContext.SaveChangesAsync();
+                            _logger.LogInformation("Đã lưu avatar vào DB cho userId: {UserId}, AvatarUrl: {AvatarUrl}", userId, customer.AvatarUrl);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Zalo API trả về lỗi cho userId: {UserId}, error: {Error}", userId, error.GetInt32());
+                        }
                     }
-
-                    customer.Name = name ?? $"User {userId}";
-                    customer.AvatarUrl = avatarUrl ?? "";
-                    customer.LastUpdated = DateTime.UtcNow;
-
-                    await dbContext.SaveChangesAsync();
-                    _logger.LogInformation("Đã lưu avatar vào DB cho userId: {UserId}, AvatarUrl: {AvatarUrl}", userId, customer.AvatarUrl);
+                    else
+                    {
+                        _logger.LogError("Không gọi được Zalo API getprofile cho userId: {UserId}, StatusCode: {StatusCode}", userId, response.StatusCode);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _logger.LogWarning("Zalo API trả về lỗi cho userId: {UserId}, error: {Error}", userId, error.GetInt32());
+                    _logger.LogError(ex, "Exception khi lấy profile Zalo cho userId: {UserId}", userId);
+                }
+
+                if (customer == null)
+                {
+                    customer = new ZaloCustomer
+                    {
+                        ZaloId = userId,
+                        Name = $"User {userId}",
+                        AvatarUrl = "",
+                        LastUpdated = DateTime.UtcNow
+                    };
+                    dbContext.ZaloCustomers.Add(customer);
+                    await dbContext.SaveChangesAsync();
+                    _logger.LogWarning("Tạo mới customer nhưng không có avatar cho userId: {UserId}", userId);
                 }
             }
             else
             {
-                _logger.LogError("Không gọi được Zalo API getprofile cho userId: {UserId}, StatusCode: {StatusCode}", userId, response.StatusCode);
+                _logger.LogInformation("Customer đã có trong DB, AvatarUrl: {AvatarUrl}", customer.AvatarUrl);
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception khi lấy profile Zalo cho userId: {UserId}", userId);
-        }
 
-        if (customer == null)
-        {
-            customer = new ZaloCustomer
-            {
-                ZaloId = userId,
-                Name = $"User {userId}",
-                AvatarUrl = "",
-                LastUpdated = DateTime.UtcNow
-            };
-            dbContext.ZaloCustomers.Add(customer);
-            await dbContext.SaveChangesAsync();
-            _logger.LogWarning("Tạo mới customer nhưng không có avatar cho userId: {UserId}", userId);
+            return customer;
         }
-    }
-    else
-    {
-        _logger.LogInformation("Customer đã có trong DB, AvatarUrl: {AvatarUrl}", customer.AvatarUrl);
-    }
-
-    return customer;
-}
 
         private async Task<ZaloCustomer> EnsureOACustomerExistsAsync(ZaloDbContext dbContext)
         {
@@ -597,6 +601,56 @@ namespace FacebookWebhookServerCore.Controllers
             if (contentType.StartsWith("video/")) return "video";
             if (contentType.StartsWith("audio/")) return "audio";
             return "file";
+        }
+
+        private async Task ProcessFileMessage(ZaloDbContext dbContext, JsonElement data)
+        {
+            try
+            {
+                var senderId = data.GetProperty("sender").GetProperty("id").GetString();
+                var attachments = data.GetProperty("message").GetProperty("attachments");
+                var firstAttachment = attachments[0];
+                var payload = firstAttachment.GetProperty("payload");
+                var fileUrl = payload.GetProperty("url").GetString();
+                var fileName = payload.GetProperty("name").GetString();
+                var fileType = payload.GetProperty("type").GetString();
+                var timestampStr = data.GetProperty("timestamp").GetString();
+                var timestampLong = long.Parse(timestampStr);
+                var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
+
+                var customer = await GetOrCreateZaloCustomerAsync(dbContext, senderId);
+
+                // Lưu vào DB
+                var zaloMessage = new ZaloMessage
+                {
+                    SenderId = senderId,
+                    RecipientId = _oaId,
+                    Content = fileUrl, // Có thể lưu thêm tên file nếu muốn
+                    Time = timestamp,
+                    Direction = "inbound"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
+
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.TimeVietnam.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = customer.Name,
+                    SenderAvatar = customer.AvatarUrl,
+                    FileName = fileName,
+                    FileType = fileType
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing file message");
+                throw;
+            }
         }
     }
 }
