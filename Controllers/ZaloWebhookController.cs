@@ -509,39 +509,39 @@ namespace FacebookWebhookServerCore.Controllers
         }
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-            [FromServices] ZaloDbContext dbContext,
-            [FromForm] string recipientId,
-            [FromForm] IFormFile file)
+    [FromServices] ZaloDbContext dbContext,
+    [FromForm] string recipientId,
+    [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0)
                 return BadRequest("File rỗng.");
 
             try
             {
-                // Upload lên Cloudinary
+                // Upload file lên Cloudinary
                 var fileUrl = await UploadFileToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
 
-                // Gửi tin nhắn media tới Zalo
-                var client = _httpClientFactory.CreateClient();
-                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-                client.DefaultRequestHeaders.Clear();
-                client.DefaultRequestHeaders.Add("access_token", accessToken);
-
+                // Tạo payload gửi lên Zalo OA API
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 var payload = new
                 {
                     recipient = new { user_id = recipientId },
                     message = new
                     {
-                        text = file.FileName, // hoặc một mô tả ngắn, VD: "Ảnh gửi từ OA"
+                        text = file.FileName, // hoặc mô tả ngắn
                         attachment = new
                         {
-                            type = attachmentType,
+                            type = attachmentType, // "image", "file", "video", ...
                             payload = new { url = fileUrl }
                         }
                     }
                 };
+
+                var client = _httpClientFactory.CreateClient();
+                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
 
                 var payloadJson = JsonSerializer.Serialize(payload);
                 var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
@@ -573,7 +573,7 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderAvatar = oaAsCustomer.AvatarUrl,
                     FileName = file.FileName,
                     FileType = file.ContentType,
-                    IsImage = attachmentType == "image" // Thêm dòng này
+                    IsImage = attachmentType == "image"
                 });
 
                 if (response.IsSuccessStatusCode)
