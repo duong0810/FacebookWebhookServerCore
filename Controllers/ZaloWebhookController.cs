@@ -586,24 +586,35 @@ namespace FacebookWebhookServerCore.Controllers
         }
         private async Task<string> UploadFileToCloudinaryAsync(IFormFile file)
         {
-            var uploadResult = new RawUploadResult();
             if (file.Length > 0)
             {
                 using (var stream = file.OpenReadStream())
                 {
-                    var uploadParams = new RawUploadParams() { File = new FileDescription(file.FileName, stream) };
-                    uploadResult = await _cloudinary.UploadAsync(uploadParams);
+                    if (file.ContentType.StartsWith("image/"))
+                    {
+                        var uploadParams = new ImageUploadParams()
+                        {
+                            File = new FileDescription(file.FileName, stream)
+                        };
+                        var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+                        if (uploadResult.Error != null) throw new Exception(uploadResult.Error.Message);
+                        _logger.LogInformation("Cloudinary image URL: {Url}", uploadResult.SecureUrl?.AbsoluteUri);
+                        return uploadResult.SecureUrl.AbsoluteUri;
+                    }
+                    else
+                    {
+                        var uploadParams = new RawUploadParams()
+                        {
+                            File = new FileDescription(file.FileName, stream)
+                        };
+                        var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+                        if (uploadResult.Error != null) throw new Exception(uploadResult.Error.Message);
+                        _logger.LogInformation("Cloudinary raw file URL: {Url}", uploadResult.SecureUrl?.AbsoluteUri);
+                        return uploadResult.SecureUrl.AbsoluteUri;
+                    }
                 }
             }
-            if (uploadResult.Error != null) throw new Exception(uploadResult.Error.Message);
-            return uploadResult.SecureUrl.AbsoluteUri;
-        }
-        private string GetAttachmentType(string contentType)
-        {
-            if (contentType.StartsWith("image/")) return "image";
-            if (contentType.StartsWith("video/")) return "video";
-            if (contentType.StartsWith("audio/")) return "audio";
-            return "file";
+            throw new Exception("File rỗng.");
         }
 
         private async Task ProcessFileMessage(ZaloDbContext dbContext, JsonElement data)
