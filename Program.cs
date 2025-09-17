@@ -99,10 +99,14 @@ using (var scope = app.Services.CreateScope())
     // Áp dụng migration cho DB của Zalo
     var zaloDb = scope.ServiceProvider.GetRequiredService<ZaloDbContext>();
     zaloDb.Database.Migrate();
+
+    // Khởi tạo token Zalo từ appsettings.json nếu chưa có trong DB
+    var zaloAuthService = scope.ServiceProvider.GetRequiredService<ZaloAuthService>();
+    zaloAuthService.EnsureTokenInitializedAsync().GetAwaiter().GetResult();
 }
 
-// Kiểm tra thư mục wwwroot
-var webRoot = app.Environment.WebRootPath;
+    // Kiểm tra thư mục wwwroot
+    var webRoot = app.Environment.WebRootPath;
 Console.WriteLine($"WebRootPath: {webRoot}");
 if (Directory.Exists(webRoot))
 {

@@ -152,5 +152,32 @@ namespace Webhook_Message.Services
                 ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 300)
             };
         }
+        public async Task EnsureTokenInitializedAsync()
+        {
+            var tokenInfo = await _dbContext.ZaloTokens.FirstOrDefaultAsync();
+            if (tokenInfo == null)
+            {
+                var accessToken = _configuration["ZaloOA:AccessToken"];
+                var refreshToken = _configuration["ZaloOA:RefreshToken"];
+                var expireAtStr = _configuration["ZaloOA:ExpiredTime"];
+                DateTime expireAt = DateTime.TryParse(expireAtStr, out var dt) ? dt : DateTime.UtcNow.AddHours(1);
+
+                if (!string.IsNullOrEmpty(accessToken) && !string.IsNullOrEmpty(refreshToken))
+                {
+                    _dbContext.ZaloTokens.Add(new ZaloTokenInfo
+                    {
+                        AccessToken = accessToken,
+                        RefreshToken = refreshToken,
+                        ExpireAt = expireAt
+                    });
+                    await _dbContext.SaveChangesAsync();
+                    Console.WriteLine("Khởi tạo token từ cấu hình appsettings.json thành công.");
+                }
+                else
+                {
+                    Console.WriteLine("Thiếu AccessToken hoặc RefreshToken trong appsettings.json.");
+                }
+            }
+        }
     }
 }
