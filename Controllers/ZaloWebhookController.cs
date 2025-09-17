@@ -240,8 +240,7 @@ namespace FacebookWebhookServerCore.Controllers
                     .FirstOrDefaultAsync(m => m.SenderId == _oaId && m.RecipientId == userId && m.Content == text && m.Direction == "outbound");
                 if (outboundMsg != null)
                 {
-                    outboundMsg.Status = "delivered";
-                    outboundMsg.DeliveredTime = DateTimeOffset.FromUnixTimeMilliseconds(msgTime).UtcDateTime;
+                    // Đã xoá outboundMsg.Status và outboundMsg.DeliveredTime
                     await dbContext.SaveChangesAsync();
 
                     await _hubContext.Clients.All.SendAsync("MessageDelivered", new
