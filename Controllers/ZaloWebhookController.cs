@@ -244,28 +244,32 @@ namespace FacebookWebhookServerCore.Controllers
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
 
                 object messagePayload;
+                string attachmentText = "Đây là file từ OA"; // Có thể cho phép truyền từ client hoặc tự động sinh
+
                 if (attachmentType == "image")
                 {
                     messagePayload = new
                     {
+                        text = attachmentText,
                         attachments = new[]
                         {
-                    new
-                    {
-                        type = "image",
-                        payload = new
-                        {
-                            url = fileUrl,
-                            thumbnail = fileUrl // Nếu không có thumbnail riêng, dùng luôn url ảnh gốc
+                            new
+                            {
+                                type = "image",
+                                payload = new
+                                {
+                                    url = fileUrl,
+                                    thumbnail = fileUrl
+                                }
+                            }
                         }
-                    }
-                }
                     };
                 }
                 else
                 {
                     messagePayload = new
                     {
+                        text = attachmentText,
                         attachment = new
                         {
                             type = attachmentType,
