@@ -224,7 +224,94 @@ namespace FacebookWebhookServerCore.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+        [HttpPost("send-image-url")]
+        public async Task<IActionResult> SendImageUrl(
+    [FromServices] ZaloDbContext dbContext,
+    [FromBody] ZaloMessageRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.RecipientId) || string.IsNullOrEmpty(request.Message) || string.IsNullOrEmpty(request.ImageUrl))
+                    return BadRequest(new { status = "error", details = "RecipientId, Message, and ImageUrl are required." });
 
+                var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
+                var payload = new
+                {
+                    recipient = new { user_id = request.RecipientId },
+                    message = new
+                    {
+                        text = request.Message,
+                        attachment = new
+                        {
+                            type = "template",
+                            payload = new
+                            {
+                                template_type = "media",
+                                elements = new[]
+                                {
+                            new
+                            {
+                                media_type = "image",
+                                url = request.ImageUrl
+                            }
+                        }
+                            }
+                        }
+                    }
+                };
+
+                var client = _httpClientFactory.CreateClient();
+                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
+
+                var payloadJson = JsonSerializer.Serialize(payload);
+                _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
+
+                var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(url, content);
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
+
+                    var zaloMessage = new ZaloMessage
+                    {
+                        SenderId = _oaId,
+                        RecipientId = request.RecipientId,
+                        Content = request.ImageUrl,
+                        Time = DateTime.UtcNow,
+                        Direction = "outbound"
+                    };
+                    dbContext.ZaloMessages.Add(zaloMessage);
+                    await dbContext.SaveChangesAsync();
+
+                    await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                    {
+                        Id = zaloMessage.Id,
+                        SenderId = zaloMessage.SenderId,
+                        RecipientId = zaloMessage.RecipientId,
+                        Content = zaloMessage.Content,
+                        Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Direction = zaloMessage.Direction,
+                        SenderName = oaAsCustomer.Name,
+                        SenderAvatar = oaAsCustomer.AvatarUrl,
+                        IsImage = true
+                    });
+
+                    return Ok(new { status = "success", details = responseContent });
+                }
+
+                return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending image url to Zalo");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
             [FromServices] ZaloDbContext dbContext,
