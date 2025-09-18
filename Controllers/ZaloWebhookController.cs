@@ -224,11 +224,10 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-    [FromServices] ZaloDbContext dbContext,
-    [FromForm] string recipientId,
-    [FromForm] IFormFile file)
+        [FromServices] ZaloDbContext dbContext,
+        [FromForm] string recipientId,
+        [FromForm] IFormFile file)
         {
-            // Bước 1: Kiểm tra file hợp lệ
             if (string.IsNullOrEmpty(recipientId))
                 return BadRequest(new { status = "error", details = "recipientId is required." });
             if (file == null || file.Length == 0)
@@ -236,30 +235,51 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
-                // Bước 2: Upload file lên Cloudinary, lấy link public
                 var fileUrl = await UploadFileToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
 
-                // Bước 3: Đảm bảo OA và người nhận tồn tại trong database
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
-                // Bước 4: Tạo payload đúng chuẩn Zalo OA API
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
-                var payload = new
+
+                object messagePayload;
+                if (attachmentType == "image")
                 {
-                    recipient = new { user_id = recipientId },
-                    message = new
+                    messagePayload = new
+                    {
+                        attachments = new[]
+                        {
+                    new
+                    {
+                        type = "image",
+                        payload = new
+                        {
+                            url = fileUrl,
+                            thumbnail = fileUrl // Nếu không có thumbnail riêng, dùng luôn url ảnh gốc
+                        }
+                    }
+                }
+                    };
+                }
+                else
+                {
+                    messagePayload = new
                     {
                         attachment = new
                         {
                             type = attachmentType,
                             payload = new { url = fileUrl }
                         }
-                    }
+                    };
+                }
+
+                var payload = new
+                {
+                    recipient = new { user_id = recipientId },
+                    message = messagePayload
                 };
 
-                // Bước 5: Lấy access token và gửi request đến Zalo
                 var client = _httpClientFactory.CreateClient();
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                 client.DefaultRequestHeaders.Clear();
@@ -273,7 +293,6 @@ namespace FacebookWebhookServerCore.Controllers
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
 
-                // Bước 6: Lưu tin nhắn vào database
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = _oaId,
@@ -285,7 +304,6 @@ namespace FacebookWebhookServerCore.Controllers
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
 
-                // Bước 7: Gửi thông báo realtime qua SignalR
                 await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
                 {
                     Id = zaloMessage.Id,
@@ -301,7 +319,6 @@ namespace FacebookWebhookServerCore.Controllers
                     IsImage = attachmentType == "image"
                 });
 
-                // Bước 8: Trả về kết quả cho client
                 if (response.IsSuccessStatusCode)
                     return Ok(new { status = "success", details = responseContent });
 
