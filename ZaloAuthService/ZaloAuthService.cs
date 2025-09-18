@@ -104,17 +104,15 @@ namespace Webhook_Message.Services
             var oaId = _configuration["ZaloOA:OaId"];
 
             if (string.IsNullOrEmpty(oaSecret) || string.IsNullOrEmpty(oaId))
-            {
                 throw new Exception("OA Secret hoặc OA Id bị thiếu trong cấu hình. Vui lòng kiểm tra appsettings.json.");
-            }
 
             var content = new FormUrlEncodedContent(new[]
             {
-                new KeyValuePair<string, string>("app_id", oaId),
-                new KeyValuePair<string, string>("secret_key", oaSecret),
-                new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
-            });
+        new KeyValuePair<string, string>("app_id", oaId),
+        new KeyValuePair<string, string>("secret_key", oaSecret),
+        new KeyValuePair<string, string>("grant_type", "refresh_token"),
+        new KeyValuePair<string, string>("refresh_token", refreshToken)
+    });
 
             var response = await _httpClient.PostAsync("https://oauth.zaloapp.com/v4/oa/access_token", content);
 
