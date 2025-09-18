@@ -252,18 +252,20 @@ namespace FacebookWebhookServerCore.Controllers
                     messagePayload = new
                     {
                         text = attachmentText,
-                        attachment = new
+                        attachments = new[]
                         {
-                            type = "image",
-                            payload = new
+                            new
                             {
-                                url = fileUrl,
-                                thumbnail = fileUrl
+                                type = "image",
+                                payload = new
+                                {
+                                    url = fileUrl,
+                                    thumbnail = fileUrl
+                                }
                             }
                         }
                     };
                 }
-                // Payload cho file/video/audio
                 else
                 {
                     messagePayload = new
