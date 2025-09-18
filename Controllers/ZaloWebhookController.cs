@@ -224,9 +224,9 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-        [FromServices] ZaloDbContext dbContext,
-        [FromForm] string recipientId,
-        [FromForm] IFormFile file)
+    [FromServices] ZaloDbContext dbContext,
+    [FromForm] string recipientId,
+    [FromForm] IFormFile file)
         {
             if (string.IsNullOrEmpty(recipientId))
                 return BadRequest(new { status = "error", details = "recipientId is required." });
@@ -241,32 +241,35 @@ namespace FacebookWebhookServerCore.Controllers
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
-                var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
-
+                string url;
                 object messagePayload;
-                string attachmentText = "Đây là file từ OA"; // Có thể cho phép truyền từ client hoặc tự động sinh
+                string attachmentText = "Đây là file từ OA";
 
                 if (attachmentType == "image")
                 {
+                    // Gửi ảnh: endpoint riêng, payload dạng attachments
+                    url = "https://openapi.zalo.me/v3.0/oa/message/image";
                     messagePayload = new
                     {
                         text = attachmentText,
                         attachments = new[]
                         {
-                            new
-                            {
-                                type = "image",
-                                payload = new
-                                {
-                                    url = fileUrl,
-                                    thumbnail = fileUrl
-                                }
-                            }
+                    new
+                    {
+                        type = "image",
+                        payload = new
+                        {
+                            url = fileUrl,
+                            thumbnail = fileUrl
                         }
+                    }
+                }
                     };
                 }
                 else
                 {
+                    // Gửi file, video, audio: endpoint chung, payload dạng attachment
+                    url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                     messagePayload = new
                     {
                         text = attachmentText,
