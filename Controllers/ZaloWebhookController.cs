@@ -245,40 +245,24 @@ namespace FacebookWebhookServerCore.Controllers
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
                 string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
-                object messagePayload;
-                string attachmentText = "Đây là file từ OA";
 
-                if (attachmentType == "image")
+                // Đúng chuẩn Zalo API v3.0: chỉ dùng attachments
+                var messagePayload = new
                 {
-                    messagePayload = new
+                    attachments = new[]
                     {
-                        text = attachmentText,
-                        attachments = new[]
-                        {
-                            new
-                            {
-                                type = attachmentType,
-                                payload = new
-                                {
-                                    url = fileUrl,
-                                    thumbnail = attachmentType == "image" ? fileUrl : null
-                                }
-                            }
-                        }
-                    };
-                }
-                else
+                new
                 {
-                    messagePayload = new
+                    type = attachmentType, // "image", "file", "video", "audio"
+                    payload = new
                     {
-                        text = attachmentText,
-                        attachment = new
-                        {
-                            type = attachmentType,
-                            payload = new { url = fileUrl }
-                        }
-                    };
+                        url = fileUrl,
+                        // thumbnail chỉ cần cho ảnh, có thể bỏ qua cho file/video/audio
+                        thumbnail = attachmentType == "image" ? fileUrl : null
+                    }
                 }
+            }
+                };
 
                 var payload = new
                 {
@@ -303,7 +287,6 @@ namespace FacebookWebhookServerCore.Controllers
                 if (!response.IsSuccessStatusCode && responseContent.Contains("Access token has expired"))
                 {
                     _logger.LogWarning("Access token hết hạn, tiến hành refresh...");
-                    // Lấy refresh token từ DB
                     var tokenInfo = await dbContext.ZaloTokens.FirstOrDefaultAsync();
                     if (tokenInfo != null)
                     {
