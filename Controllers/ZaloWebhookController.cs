@@ -238,16 +238,42 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
-                var fileUrl = await UploadFileToCloudinaryAsync(file);
                 var attachmentType = GetAttachmentType(file.ContentType);
-
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
+                // 1. Upload file lên Zalo
+                string uploadEndpoint = attachmentType switch
+                {
+                    "image" => "https://openapi.zalo.me/v3.0/oa/upload/image",
+                    "video" => "https://openapi.zalo.me/v3.0/oa/upload/video",
+                    "audio" => "https://openapi.zalo.me/v3.0/oa/upload/audio",
+                    _ => "https://openapi.zalo.me/v3.0/oa/upload/file"
+                };
+
+                var client = _httpClientFactory.CreateClient();
+                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
+
+                using var form = new MultipartFormDataContent();
+                using var fs = file.OpenReadStream();
+                form.Add(new StreamContent(fs), "file", file.FileName);
+
+                var uploadResp = await client.PostAsync(uploadEndpoint, form);
+                var uploadJson = await uploadResp.Content.ReadAsStringAsync();
+                _logger.LogInformation("Upload response: {Resp}", uploadJson);
+
+                if (!uploadResp.IsSuccessStatusCode)
+                    return StatusCode((int)uploadResp.StatusCode, new { status = "error", details = uploadJson });
+
+                var doc = JsonDocument.Parse(uploadJson);
+                var attachmentId = doc.RootElement.GetProperty("data").GetProperty("attachment_id").GetString();
+
+                // 2. Gửi tin nhắn kèm attachment_id
                 string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 string attachmentText = "Đây là file từ OA";
 
-                // Đúng chuẩn Zalo API v3.0: phải có text và attachments
                 var messagePayload = new
                 {
                     text = attachmentText,
@@ -255,11 +281,10 @@ namespace FacebookWebhookServerCore.Controllers
                     {
                 new
                 {
-                    type = attachmentType, // "image", "file", "video", "audio"
+                    type = attachmentType,
                     payload = new
                     {
-                        url = fileUrl,
-                        thumbnail = attachmentType == "image" ? fileUrl : null
+                        attachment_id = attachmentId
                     }
                 }
             }
@@ -270,11 +295,6 @@ namespace FacebookWebhookServerCore.Controllers
                     recipient = new { user_id = recipientId },
                     message = messagePayload
                 };
-
-                var client = _httpClientFactory.CreateClient();
-                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-                client.DefaultRequestHeaders.Clear();
-                client.DefaultRequestHeaders.Add("access_token", accessToken);
 
                 var payloadJson = JsonSerializer.Serialize(payload);
                 _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
@@ -304,11 +324,12 @@ namespace FacebookWebhookServerCore.Controllers
                     }
                 }
 
+                // Lưu vào DB và broadcast lên chat
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = _oaId,
                     RecipientId = recipientId,
-                    Content = fileUrl,
+                    Content = attachmentId, // Lưu attachment_id thay vì url ngoài
                     Time = DateTime.UtcNow,
                     Direction = "outbound"
                 };
