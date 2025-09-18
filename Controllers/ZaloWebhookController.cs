@@ -227,9 +227,9 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-    [FromServices] ZaloDbContext dbContext,
-    [FromForm] string recipientId,
-    [FromForm] IFormFile file)
+            [FromServices] ZaloDbContext dbContext,
+            [FromForm] string recipientId,
+            [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
@@ -241,10 +241,10 @@ namespace FacebookWebhookServerCore.Controllers
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
 
                 // 1. Upload file lên Zalo để lấy attachment_id
-                var uploadEndpoint = file.ContentType.StartsWith("image/") ? "https://openapi.zalo.me/v3.0/oa/upload/image" :
-                                   file.ContentType.StartsWith("video/") ? "https://openapi.zalo.me/v3.0/oa/upload/video" :
-                                   file.ContentType.StartsWith("audio/") ? "https://openapi.zalo.me/v3.0/oa/upload/audio" :
-                                   "https://openapi.zalo.me/v3.0/oa/upload/file"; // Default cho file khác
+                var uploadEndpoint = file.ContentType.StartsWith("image/") ? "https://openapi.zalo.me/v2.0/oa/upload/image" :
+                                   file.ContentType.StartsWith("video/") ? "https://openapi.zalo.me/v2.0/oa/upload/video" :
+                                   file.ContentType.StartsWith("audio/") ? "https://openapi.zalo.me/v2.0/oa/upload/audio" :
+                                   "https://openapi.zalo.me/v2.0/oa/upload/file"; // Default cho file khác
 
                 _logger.LogInformation("Uploading file to {UploadEndpoint} with contentType: {ContentType}", uploadEndpoint, file.ContentType);
 
@@ -340,31 +340,31 @@ namespace FacebookWebhookServerCore.Controllers
 
         // Helper method (nếu cần)
         private async Task<ZaloCustomer> EnsureOACustomerExistsAsync(ZaloDbContext dbContext)
-{
-    var oaId = _oaId; // Thay bằng OA ID thực tế
-    var oaAsCustomer = await dbContext.ZaloCustomers.FindAsync(oaId);
-    if (oaAsCustomer == null)
-    {
-        oaAsCustomer = new ZaloCustomer
         {
-            ZaloId = oaId,
-            Name = "My OA", // Tùy chỉnh tên OA
-            AvatarUrl = "", // Thêm URL avatar nếu có
-            LastUpdated = DateTime.UtcNow
-        };
-        dbContext.ZaloCustomers.Add(oaAsCustomer);
-        await dbContext.SaveChangesAsync();
-    }
-    return oaAsCustomer;
-}
+            var oaId = _oaId; // Thay bằng OA ID thực tế
+            var oaAsCustomer = await dbContext.ZaloCustomers.FindAsync(oaId);
+            if (oaAsCustomer == null)
+            {
+                oaAsCustomer = new ZaloCustomer
+                {
+                    ZaloId = oaId,
+                    Name = "My OA", // Tùy chỉnh tên OA
+                    AvatarUrl = "", // Thêm URL avatar nếu có
+                    LastUpdated = DateTime.UtcNow
+                };
+                dbContext.ZaloCustomers.Add(oaAsCustomer);
+                await dbContext.SaveChangesAsync();
+            }
+            return oaAsCustomer;
+        }
 
-// Helper method (tái sử dụng từ code cũ nếu có)
-private string GetAttachmentType(string contentType)
-{
-    return contentType.StartsWith("image") ? "image" :
-           contentType.StartsWith("video") ? "video" :
-           contentType.StartsWith("audio") ? "audio" : "file";
-}
+        // Helper method (tái sử dụng từ code cũ nếu có)
+        private string GetAttachmentType(string contentType)
+        {
+            return contentType.StartsWith("image") ? "image" :
+                   contentType.StartsWith("video") ? "video" :
+                   contentType.StartsWith("audio") ? "audio" : "file";
+        }
 
         private async Task<ZaloCustomer> GetOrCreateZaloCustomerAsync(ZaloDbContext dbContext, string userId)
         {
