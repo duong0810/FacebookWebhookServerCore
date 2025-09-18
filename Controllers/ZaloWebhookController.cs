@@ -158,258 +158,198 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        // Gửi tin nhắn văn bản đến người dùng ẩn danh
-        [HttpPost("send-anonymous-text")]
-        public async Task<IActionResult> SendAnonymousText([FromServices] ZaloDbContext dbContext, [FromBody] ZaloMessageRequest request)
-
+        [HttpPost("send-message")]
+        public async Task<IActionResult> SendMessage([FromServices] ZaloDbContext dbContext, [FromBody] ZaloMessageRequest request)
         {
-            if (string.IsNullOrEmpty(request.AnonymousId) || string.IsNullOrEmpty(request.ConversationId) || string.IsNullOrEmpty(request.Message))
-                return BadRequest(new { status = "error", details = "AnonymousId, ConversationId và Message là bắt buộc." });
-
-            var url = "https://openapi.zalo.me/v2.0/oa/message";
-            var payload = new
+            try
             {
-                recipient = new
+                if (string.IsNullOrEmpty(request.RecipientId) || string.IsNullOrEmpty(request.Message))
+                    return BadRequest(new { status = "error", details = "RecipientId and Message are required." });
+
+                var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
+                var payload = new
                 {
-                    anonymous_id = request.AnonymousId,
-                    conversation_id = request.ConversationId
-                },
-                message = new { text = request.Message }
-            };
-
-            var client = _httpClientFactory.CreateClient();
-            var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("access_token", accessToken);
-
-            var payloadJson = JsonSerializer.Serialize(payload);
-            var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
-            var response = await client.PostAsync(url, content);
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            // Lưu lịch sử gửi tin nhắn nếu cần
-            if (response.IsSuccessStatusCode)
-            {
-                var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
-                var zaloMessage = new ZaloMessage
-                {
-                    SenderId = _oaId,
-                    RecipientId = request.AnonymousId,
-                    Content = request.Message,
-                    Time = DateTime.UtcNow,
-                    Direction = "outbound"
+                    recipient = new { user_id = request.RecipientId },
+                    message = new { text = request.Message }
                 };
-                dbContext.ZaloMessages.Add(zaloMessage);
-                await dbContext.SaveChangesAsync();
 
-                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                var client = _httpClientFactory.CreateClient();
+                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
+
+                var payloadJson = JsonSerializer.Serialize(payload);
+                _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
+
+                var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(url, content);
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
+
+                if (response.IsSuccessStatusCode)
                 {
-                    Id = zaloMessage.Id,
-                    SenderId = zaloMessage.SenderId,
-                    RecipientId = zaloMessage.RecipientId,
-                    Content = zaloMessage.Content,
-                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                    Direction = zaloMessage.Direction,
-                    SenderName = oaAsCustomer.Name,
-                    SenderAvatar = oaAsCustomer.AvatarUrl
-                });
+                    var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                return Ok(new { status = "success", details = responseContent });
+                    var zaloMessage = new ZaloMessage
+                    {
+                        SenderId = _oaId,
+                        RecipientId = request.RecipientId,
+                        Content = request.Message,
+                        Time = DateTime.UtcNow,
+                        Direction = "outbound"
+                    };
+                    dbContext.ZaloMessages.Add(zaloMessage);
+                    await dbContext.SaveChangesAsync();
+
+                    await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                    {
+                        Id = zaloMessage.Id,
+                        SenderId = zaloMessage.SenderId,
+                        RecipientId = zaloMessage.RecipientId,
+                        Content = zaloMessage.Content,
+                        Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Direction = zaloMessage.Direction,
+                        SenderName = oaAsCustomer.Name,
+                        SenderAvatar = oaAsCustomer.AvatarUrl
+                    });
+
+                    return Ok(new { status = "success", details = responseContent });
+                }
+
+                return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
             }
-
-            return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending message to Zalo");
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
 
-        // Gửi tin nhắn dạng ảnh đến người dùng ẩn danh
-        [HttpPost("send-anonymous-image")]
-        public async Task<IActionResult> SendAnonymousImage([FromServices] ZaloDbContext dbContext, [FromForm] string anonymousId, [FromForm] string conversationId, [FromForm] IFormFile image)
+        [HttpPost("send-attachment")]
+        public async Task<IActionResult> SendAttachment(
+            [FromServices] ZaloDbContext dbContext,
+            [FromForm] string recipientId,
+            [FromForm] IFormFile file)
         {
-            if (image == null || image.Length == 0) return BadRequest("File ảnh trống.");
-            if (string.IsNullOrEmpty(anonymousId) || string.IsNullOrEmpty(conversationId)) return BadRequest("anonymousId và conversationId là bắt buộc.");
+            if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
-            var client = _httpClientFactory.CreateClient();
-            var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("access_token", accessToken);
-
-            // Upload ảnh lên Zalo
-            var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/image";
-            using var form = new MultipartFormDataContent();
-            using var fs = image.OpenReadStream();
-            form.Add(new StreamContent(fs), "file", image.FileName);
-
-            var uploadResponse = await client.PostAsync(uploadEndpoint, form);
-            var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
-            if (!uploadResponse.IsSuccessStatusCode)
-                return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
-
-            var doc = JsonDocument.Parse(uploadJson);
-            var attachmentId = doc.RootElement.GetProperty("data").GetProperty("attachment_id").GetString();
-
-            // Gửi tin nhắn ảnh
-            var url = "https://openapi.zalo.me/v2.0/oa/message";
-            var payload = new
+            try
             {
-                recipient = new
+                var client = _httpClientFactory.CreateClient();
+                var accessToken = await _zaloAuthService.GetAccessTokenAsync();
+                client.DefaultRequestHeaders.Clear(); // Clear header để tránh xung đột
+                client.DefaultRequestHeaders.Add("access_token", accessToken);
+
+                // 1. Upload file lên Zalo để lấy attachment_id
+                var uploadEndpoint = file.ContentType.StartsWith("image/") ? "https://openapi.zalo.me/v2.0/oa/upload/image" :
+                                   file.ContentType.StartsWith("video/") ? "https://openapi.zalo.me/v2.0/oa/upload/video" :
+                                   file.ContentType.StartsWith("audio/") ? "https://openapi.zalo.me/v2.0/oa/upload/audio" :
+                                   "https://openapi.zalo.me/v2.0/oa/upload/file"; // Default cho file khác
+
+                _logger.LogInformation("Uploading file to {UploadEndpoint} with contentType: {ContentType}", uploadEndpoint, file.ContentType);
+
+                using var form = new MultipartFormDataContent();
+                using var fs = file.OpenReadStream();
+                form.Add(new StreamContent(fs), "file", file.FileName);
+
+                var uploadResponse = await client.PostAsync(uploadEndpoint, form);
+                var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
+                _logger.LogInformation("Upload response: {UploadJson}", uploadJson);
+
+                if (!uploadResponse.IsSuccessStatusCode)
+                    return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
+
+                var doc = JsonDocument.Parse(uploadJson);
+                if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("attachment_id", out var attachmentIdElement))
+                    return BadRequest("Invalid upload response: missing attachment_id");
+
+                var attachmentId = attachmentIdElement.GetString();
+                var attachmentType = GetAttachmentType(file.ContentType);
+
+                // 2. Gửi tin nhắn với attachment_id
+                var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
+                var messagePayload = new
                 {
-                    anonymous_id = anonymousId,
-                    conversation_id = conversationId
-                },
-                message = new
-                {
+                    text = $"File từ OA: {file.FileName}", // Đảm bảo text hợp lệ
                     attachments = new[]
                     {
-                        new
-                        {
-                            type = "image",
-                            payload = new { attachment_id = attachmentId }
-                        }
-                    }
+                new
+                {
+                    type = attachmentType,
+                    payload = new { attachment_id = attachmentId }
                 }
-            };
-
-            var payloadJson = JsonSerializer.Serialize(payload);
-            var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
-            var response = await client.PostAsync(url, content);
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            // Lưu lịch sử gửi tin nhắn
-            if (response.IsSuccessStatusCode)
-            {
-                var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
-                var zaloMessage = new ZaloMessage
-                {
-                    SenderId = _oaId,
-                    RecipientId = anonymousId,
-                    Content = attachmentId,
-                    Time = DateTime.UtcNow,
-                    Direction = "outbound"
-                };
-                dbContext.ZaloMessages.Add(zaloMessage);
-                await dbContext.SaveChangesAsync();
-
-                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                {
-                    Id = zaloMessage.Id,
-                    SenderId = zaloMessage.SenderId,
-                    RecipientId = zaloMessage.RecipientId,
-                    Content = zaloMessage.Content,
-                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                    Direction = zaloMessage.Direction,
-                    SenderName = oaAsCustomer.Name,
-                    SenderAvatar = oaAsCustomer.AvatarUrl,
-                    FileName = image.FileName,
-                    FileType = image.ContentType,
-                    IsImage = true
-                });
-
-                return Ok(new { status = "success", details = responseContent });
             }
+                };
 
-            return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
-        }
-
-        // Gửi tin nhắn dạng file đến người dùng ẩn danh
-        [HttpPost("send-anonymous-file")]
-        public async Task<IActionResult> SendAnonymousFile([FromServices] ZaloDbContext dbContext, [FromForm] string anonymousId, [FromForm] string conversationId, [FromForm] IFormFile file)
-        {
-            if (file == null || file.Length == 0) return BadRequest("File trống.");
-            if (string.IsNullOrEmpty(anonymousId) || string.IsNullOrEmpty(conversationId)) return BadRequest("anonymousId và conversationId là bắt buộc.");
-
-            var client = _httpClientFactory.CreateClient();
-            var accessToken = await _zaloAuthService.GetAccessTokenAsync();
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("access_token", accessToken);
-
-            // Upload file lên Zalo
-            var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
-            using var form = new MultipartFormDataContent();
-            using var fs = file.OpenReadStream();
-            form.Add(new StreamContent(fs), "file", file.FileName);
-
-            var uploadResponse = await client.PostAsync(uploadEndpoint, form);
-            var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
-            if (!uploadResponse.IsSuccessStatusCode)
-                return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
-
-            var doc = JsonDocument.Parse(uploadJson);
-            var attachmentId = doc.RootElement.GetProperty("data").GetProperty("attachment_id").GetString();
-
-            // Gửi tin nhắn file
-            var url = "https://openapi.zalo.me/v2.0/oa/message";
-            var payload = new
-            {
-                recipient = new
+                var payload = new
                 {
-                    anonymous_id = anonymousId,
-                    conversation_id = conversationId
-                },
-                message = new
+                    recipient = new { user_id = recipientId },
+                    message = messagePayload
+                };
+
+                var payloadJson = JsonSerializer.Serialize(payload);
+                _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
+
+                var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(url, content);
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
+
+                if (response.IsSuccessStatusCode)
                 {
-                    attachments = new[]
+                    // 3. Lưu và broadcast tin nhắn
+                    var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
+
+                    var zaloMessage = new ZaloMessage
                     {
-                        new
-                        {
-                            type = "file",
-                            payload = new { attachment_id = attachmentId }
-                        }
-                    }
+                        SenderId = _oaId,
+                        RecipientId = recipientId,
+                        Content = attachmentId,
+                        Time = DateTime.UtcNow,
+                        Direction = "outbound"
+                    };
+                    dbContext.ZaloMessages.Add(zaloMessage);
+                    await dbContext.SaveChangesAsync();
+
+                    await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                    {
+                        Id = zaloMessage.Id,
+                        SenderId = zaloMessage.SenderId,
+                        RecipientId = zaloMessage.RecipientId,
+                        Content = zaloMessage.Content,
+                        Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                        Direction = zaloMessage.Direction,
+                        SenderName = oaAsCustomer.Name,
+                        SenderAvatar = oaAsCustomer.AvatarUrl,
+                        FileName = file.FileName,
+                        FileType = file.ContentType,
+                        IsImage = attachmentType == "image"
+                    });
+
+                    return Ok(new { status = "success", details = responseContent });
                 }
-            };
 
-            var payloadJson = JsonSerializer.Serialize(payload);
-            var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
-            var response = await client.PostAsync(url, content);
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            // Lưu lịch sử gửi tin nhắn
-            if (response.IsSuccessStatusCode)
-            {
-                var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
-                var zaloMessage = new ZaloMessage
-                {
-                    SenderId = _oaId,
-                    RecipientId = anonymousId,
-                    Content = attachmentId,
-                    Time = DateTime.UtcNow,
-                    Direction = "outbound"
-                };
-                dbContext.ZaloMessages.Add(zaloMessage);
-                await dbContext.SaveChangesAsync();
-
-                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                {
-                    Id = zaloMessage.Id,
-                    SenderId = zaloMessage.SenderId,
-                    RecipientId = zaloMessage.RecipientId,
-                    Content = zaloMessage.Content,
-                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                    Direction = zaloMessage.Direction,
-                    SenderName = oaAsCustomer.Name,
-                    SenderAvatar = oaAsCustomer.AvatarUrl,
-                    FileName = file.FileName,
-                    FileType = file.ContentType,
-                    IsImage = false
-                });
-
-                return Ok(new { status = "success", details = responseContent });
+                return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
             }
-
-            return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending attachment to Zalo");
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
 
         // Helper method (nếu cần)
         private async Task<ZaloCustomer> EnsureOACustomerExistsAsync(ZaloDbContext dbContext)
         {
-            var oaId = _oaId;
+            var oaId = _oaId; // Thay bằng OA ID thực tế
             var oaAsCustomer = await dbContext.ZaloCustomers.FindAsync(oaId);
             if (oaAsCustomer == null)
             {
                 oaAsCustomer = new ZaloCustomer
                 {
                     ZaloId = oaId,
-                    Name = "My OA",
-                    AvatarUrl = "",
+                    Name = "My OA", // Tùy chỉnh tên OA
+                    AvatarUrl = "", // Thêm URL avatar nếu có
                     LastUpdated = DateTime.UtcNow
                 };
                 dbContext.ZaloCustomers.Add(oaAsCustomer);
@@ -418,14 +358,13 @@ namespace FacebookWebhookServerCore.Controllers
             return oaAsCustomer;
         }
 
+        // Helper method (tái sử dụng từ code cũ nếu có)
         private string GetAttachmentType(string contentType)
         {
             return contentType.StartsWith("image") ? "image" :
                    contentType.StartsWith("video") ? "video" :
                    contentType.StartsWith("audio") ? "audio" : "file";
         }
-
-        // Các hàm xử lý webhook inbound giữ nguyên như cũ...
 
         private async Task<ZaloCustomer> GetOrCreateZaloCustomerAsync(ZaloDbContext dbContext, string userId)
         {
@@ -491,7 +430,9 @@ namespace FacebookWebhookServerCore.Controllers
             return customer;
         }
 
-        // Các hàm xử lý webhook inbound giữ nguyên như cũ...
+
+
+
         private async Task ProcessTextMessage(ZaloDbContext dbContext, JsonElement data)
         {
             var senderId = data.GetProperty("sender").GetProperty("id").GetString();
@@ -500,6 +441,7 @@ namespace FacebookWebhookServerCore.Controllers
             var timestampLong = long.Parse(timestampStr);
             var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
+            // Đảm bảo cả OA và người dùng đều tồn tại trong ZaloCustomers
             var customer = await GetOrCreateZaloCustomerAsync(dbContext, senderId);
             var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
@@ -615,10 +557,55 @@ namespace FacebookWebhookServerCore.Controllers
                 });
             }
         }
+        private async Task ProcessOASendImage(ZaloDbContext dbContext, JsonElement data)
+        {
+            var recipientId = data.GetProperty("recipient").GetProperty("id").GetString();
+            var timestampStr = data.GetProperty("timestamp").GetString();
+            var timestampLong = long.Parse(timestampStr);
+            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
+            var attachments = data.GetProperty("message").GetProperty("attachments");
+            var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
+            var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
+
+            foreach (var attachment in attachments.EnumerateArray())
+            {
+                var payload = attachment.GetProperty("payload");
+                // Zalo không trả url khi OA gửi, thay vào đó dùng attachment_id hoặc để trống nếu chỉ xác nhận
+                var attachmentId = payload.TryGetProperty("attachment_id", out var attachmentIdElement)
+                    ? attachmentIdElement.GetString()
+                    : "";
+
+                var zaloMessage = new ZaloMessage
+                {
+                    SenderId = _oaId,
+                    RecipientId = recipientId,
+                    Content = attachmentId, // Lưu attachment_id thay vì url
+                    Time = timestamp,
+                    Direction = "outbound"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
+
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = oaCustomer.Name,
+                    SenderAvatar = oaCustomer.AvatarUrl,
+                    IsImage = true // Giả định là image từ event oa_send_image
+                });
+            }
+        }
         private async Task ProcessSendMessageConfirmation(ZaloDbContext dbContext, JsonElement data)
         {
             // Implement logic if needed for delivery confirmation
         }
+
+
     }
 }
