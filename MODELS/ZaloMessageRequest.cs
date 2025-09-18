@@ -4,7 +4,6 @@
     {
         public string RecipientId { get; set; } // Dùng cho flow tư vấn OA
         public string Message { get; set; }
-        public string ImageUrl { get; set; } // Thêm trường này để nhận URL ảnh
 
     }
 }
