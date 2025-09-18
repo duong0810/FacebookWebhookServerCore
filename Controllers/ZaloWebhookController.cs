@@ -224,7 +224,7 @@ namespace FacebookWebhookServerCore.Controllers
                 return StatusCode(500, new { error = ex.Message });
             }
         }
-        
+
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
     [FromServices] ZaloDbContext dbContext,
@@ -235,76 +235,49 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
+                // 1. Upload file lên Cloudinary (hoặc dịch vụ lưu trữ khác) để lấy link public
+                var uploadParams = new ImageUploadParams
+                {
+                    File = new FileDescription(file.FileName, file.OpenReadStream())
+                };
+                var uploadResult = _cloudinary.Upload(uploadParams);
+                if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+                    return StatusCode(500, new { status = "error", details = "Upload image failed" });
+
+                var imageUrl = uploadResult.SecureUrl?.ToString();
+                if (string.IsNullOrEmpty(imageUrl))
+                    return StatusCode(500, new { status = "error", details = "Cannot get image url" });
+
+                // 2. Tạo payload theo chuẩn Zalo template/media
+                var payload = new
+                {
+                    recipient = new { user_id = recipientId },
+                    message = new
+                    {
+                        text = $"OA gửi ảnh: {file.FileName}",
+                        attachment = new
+                        {
+                            type = "template",
+                            payload = new
+                            {
+                                template_type = "media",
+                                elements = new[]
+                                {
+                            new
+                            {
+                                media_type = "image",
+                                url = imageUrl
+                            }
+                        }
+                            }
+                        }
+                    }
+                };
+
                 var client = _httpClientFactory.CreateClient();
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                 client.DefaultRequestHeaders.Clear();
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
-
-                // 1. Upload file lên Zalo để lấy attachment_id
-                var uploadEndpoint = file.ContentType.StartsWith("image/") ? "https://openapi.zalo.me/v2.0/oa/upload/image" :
-                                   file.ContentType.StartsWith("video/") ? "https://openapi.zalo.me/v2.0/oa/upload/video" :
-                                   file.ContentType.StartsWith("audio/") ? "https://openapi.zalo.me/v2.0/oa/upload/audio" :
-                                   "https://openapi.zalo.me/v2.0/oa/upload/file";
-
-                _logger.LogInformation("Uploading file to {UploadEndpoint} with contentType: {ContentType}", uploadEndpoint, file.ContentType);
-
-                using var form = new MultipartFormDataContent();
-                using var fs = file.OpenReadStream();
-                form.Add(new StreamContent(fs), "file", file.FileName);
-
-                var uploadResponse = await client.PostAsync(uploadEndpoint, form);
-                var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
-                _logger.LogInformation("Upload response: {UploadJson}", uploadJson);
-
-                if (!uploadResponse.IsSuccessStatusCode)
-                    return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
-
-                var doc = JsonDocument.Parse(uploadJson);
-                if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("attachment_id", out var attachmentIdElement))
-                    return BadRequest("Invalid upload response: missing attachment_id");
-
-                var attachmentId = attachmentIdElement.GetString();
-                var attachmentType = GetAttachmentType(file.ContentType);
-
-                // 2. Gửi tin nhắn với attachment_id
-                object messagePayload;
-                if (attachmentType == "image")
-                {
-                    // Gửi đúng chuẩn Zalo: chỉ có attachments, không có text
-                    messagePayload = new
-                    {
-                        attachments = new[]
-                        {
-                    new
-                    {
-                        type = "image",
-                        payload = new { attachment_id = attachmentId }
-                    }
-                }
-                    };
-                }
-                else
-                {
-                    // File, video, audio: gửi kèm text như cũ
-                    messagePayload = new
-                    {
-                        text = $"File từ OA: {file.FileName}",
-                        attachments = new[]
-                        {
-                    new
-                    {
-                        type = attachmentType,
-                        payload = new { attachment_id = attachmentId }
-                    }
-                }
-                    };
-                }
-
-                var payload = new
-                {
-                    recipient = new { user_id = recipientId },
-                    message = messagePayload
-                };
 
                 var payloadJson = JsonSerializer.Serialize(payload);
                 _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
@@ -317,14 +290,13 @@ namespace FacebookWebhookServerCore.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
-                    // 3. Lưu và broadcast tin nhắn
                     var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
                     var zaloMessage = new ZaloMessage
                     {
                         SenderId = _oaId,
                         RecipientId = recipientId,
-                        Content = attachmentId,
+                        Content = imageUrl,
                         Time = DateTime.UtcNow,
                         Direction = "outbound"
                     };
@@ -343,7 +315,7 @@ namespace FacebookWebhookServerCore.Controllers
                         SenderAvatar = oaAsCustomer.AvatarUrl,
                         FileName = file.FileName,
                         FileType = file.ContentType,
-                        IsImage = attachmentType == "image"
+                        IsImage = true
                     });
 
                     return Ok(new { status = "success", details = responseContent });
