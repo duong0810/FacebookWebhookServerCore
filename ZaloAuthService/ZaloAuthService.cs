@@ -179,5 +179,9 @@ namespace Webhook_Message.Services
                 }
             }
         }
+        public async Task<ZaloTokenInfo> RefreshAccessTokenPublicAsync(string refreshToken)
+        {
+            return await RefreshAccessTokenAsync(refreshToken);
+        }
     }
 }

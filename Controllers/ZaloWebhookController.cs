@@ -244,12 +244,10 @@ namespace FacebookWebhookServerCore.Controllers
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
-                // Sử dụng endpoint duy nhất cho mọi loại file/ảnh/video/audio
                 string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 object messagePayload;
                 string attachmentText = "Đây là file từ OA";
 
-                // Payload cho ảnh
                 if (attachmentType == "image")
                 {
                     messagePayload = new
@@ -257,16 +255,16 @@ namespace FacebookWebhookServerCore.Controllers
                         text = attachmentText,
                         attachments = new[]
                         {
-                            new
-                            {
-                                type = "image",
-                                payload = new
-                                {
-                                    url = fileUrl,
-                                    thumbnail = fileUrl
-                                }
-                            }
+                    new
+                    {
+                        type = "image",
+                        payload = new
+                        {
+                            url = fileUrl,
+                            thumbnail = fileUrl
                         }
+                    }
+                }
                     };
                 }
                 else
@@ -300,6 +298,27 @@ namespace FacebookWebhookServerCore.Controllers
                 var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
+
+                // Nếu token hết hạn, tự động refresh và gửi lại request một lần
+                if (!response.IsSuccessStatusCode && responseContent.Contains("Access token has expired"))
+                {
+                    _logger.LogWarning("Access token hết hạn, tiến hành refresh...");
+                    // Lấy refresh token từ DB
+                    var tokenInfo = await dbContext.ZaloTokens.FirstOrDefaultAsync();
+                    if (tokenInfo != null)
+                    {
+                        var newToken = await _zaloAuthService.RefreshAccessTokenPublicAsync(tokenInfo.RefreshToken);
+                        if (newToken != null)
+                        {
+                            accessToken = newToken.AccessToken;
+                            client.DefaultRequestHeaders.Remove("access_token");
+                            client.DefaultRequestHeaders.Add("access_token", accessToken);
+                            response = await client.PostAsync(url, content);
+                            responseContent = await response.Content.ReadAsStringAsync();
+                            _logger.LogInformation("Response sau khi refresh token: {Response}", responseContent);
+                        }
+                    }
+                }
 
                 var zaloMessage = new ZaloMessage
                 {
