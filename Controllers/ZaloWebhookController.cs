@@ -245,10 +245,10 @@ namespace FacebookWebhookServerCore.Controllers
                 // 1. Upload file lên Zalo
                 string uploadEndpoint = attachmentType switch
                 {
-                    "image" => "https://openapi.zalo.me/v3.0/oa/upload/image",
-                    "video" => "https://openapi.zalo.me/v3.0/oa/upload/video",
-                    "audio" => "https://openapi.zalo.me/v3.0/oa/upload/audio",
-                    _ => "https://openapi.zalo.me/v3.0/oa/upload/file"
+                    "image" => "https://openapi.zalo.me/v2.0/oa/upload/image",
+                    "video" => "https://openapi.zalo.me/v2.0/oa/upload/video",
+                    "audio" => "https://openapi.zalo.me/v2.0/oa/upload/audio",
+                    _ => "https://openapi.zalo.me/v2.0/oa/upload/file"
                 };
 
                 var client = _httpClientFactory.CreateClient();
