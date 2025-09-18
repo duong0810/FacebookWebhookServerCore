@@ -452,7 +452,10 @@ namespace FacebookWebhookServerCore.Controllers
             var timestampLong = long.Parse(timestampStr);
             var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
+            // Đảm bảo cả OA và người dùng đều tồn tại trong ZaloCustomers
             var customer = await GetOrCreateZaloCustomerAsync(dbContext, senderId);
+            var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
+
             var zaloMessage = new ZaloMessage
             {
                 SenderId = senderId,
