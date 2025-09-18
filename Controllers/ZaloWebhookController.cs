@@ -140,6 +140,9 @@ namespace FacebookWebhookServerCore.Controllers
                         case "user_send_image":
                             await ProcessImageMessage(dbContext, root);
                             break;
+                        case "oa_send_image":
+                            await ProcessSendMessageConfirmation(dbContext, root);
+                            break;
                         default:
                             _logger.LogWarning("Unknown event: {EventName}", eventName);
                             break;
@@ -573,7 +576,47 @@ namespace FacebookWebhookServerCore.Controllers
                 });
             }
         }
+        private async Task ProcessOASendImage(ZaloDbContext dbContext, JsonElement data)
+        {
+            var recipientId = data.GetProperty("recipient").GetProperty("id").GetString();
+            var timestampStr = data.GetProperty("timestamp").GetString();
+            var timestampLong = long.Parse(timestampStr);
+            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
+            var attachments = data.GetProperty("message").GetProperty("attachments");
+            var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
+            var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
+
+            foreach (var attachment in attachments.EnumerateArray())
+            {
+                var payload = attachment.GetProperty("payload");
+                var imageUrl = payload.GetProperty("url").GetString();
+
+                var zaloMessage = new ZaloMessage
+                {
+                    SenderId = _oaId,
+                    RecipientId = recipientId,
+                    Content = imageUrl,
+                    Time = timestamp,
+                    Direction = "outbound"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
+
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = oaCustomer.Name,
+                    SenderAvatar = oaCustomer.AvatarUrl,
+                    IsImage = true
+                });
+            }
+        }
         private async Task ProcessSendMessageConfirmation(ZaloDbContext dbContext, JsonElement data)
         {
             // Implement logic if needed for delivery confirmation
