@@ -245,10 +245,12 @@ namespace FacebookWebhookServerCore.Controllers
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
                 string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
+                string attachmentText = "Đây là file từ OA";
 
-                // Đúng chuẩn Zalo API v3.0: chỉ dùng attachments
+                // Đúng chuẩn Zalo API v3.0: phải có text và attachments
                 var messagePayload = new
                 {
+                    text = attachmentText,
                     attachments = new[]
                     {
                 new
@@ -257,7 +259,6 @@ namespace FacebookWebhookServerCore.Controllers
                     payload = new
                     {
                         url = fileUrl,
-                        // thumbnail chỉ cần cho ảnh, có thể bỏ qua cho file/video/audio
                         thumbnail = attachmentType == "image" ? fileUrl : null
                     }
                 }
