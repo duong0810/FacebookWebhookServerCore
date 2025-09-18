@@ -274,6 +274,7 @@ namespace FacebookWebhookServerCore.Controllers
                 string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 var messagePayload = new
                 {
+                    text = "Hình ảnh từ OA", // Thay bằng nội dung hợp lệ
                     attachments = new[]
                     {
                         new
