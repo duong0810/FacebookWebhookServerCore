@@ -241,35 +241,31 @@ namespace FacebookWebhookServerCore.Controllers
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
-                string url;
+                // Sử dụng endpoint duy nhất cho mọi loại file/ảnh/video/audio
+                string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 object messagePayload;
                 string attachmentText = "Đây là file từ OA";
 
+                // Payload cho ảnh
                 if (attachmentType == "image")
                 {
-                    // Gửi ảnh: endpoint riêng, payload dạng attachments
-                    url = "https://openapi.zalo.me/v3.0/oa/message/image";
                     messagePayload = new
                     {
                         text = attachmentText,
-                        attachments = new[]
+                        attachment = new
                         {
-                    new
-                    {
-                        type = "image",
-                        payload = new
-                        {
-                            url = fileUrl,
-                            thumbnail = fileUrl
+                            type = "image",
+                            payload = new
+                            {
+                                url = fileUrl,
+                                thumbnail = fileUrl
+                            }
                         }
-                    }
-                }
                     };
                 }
+                // Payload cho file/video/audio
                 else
                 {
-                    // Gửi file, video, audio: endpoint chung, payload dạng attachment
-                    url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                     messagePayload = new
                     {
                         text = attachmentText,
