@@ -255,16 +255,16 @@ namespace FacebookWebhookServerCore.Controllers
                         text = attachmentText,
                         attachments = new[]
                         {
-                    new
-                    {
-                        type = "image",
-                        payload = new
-                        {
-                            url = fileUrl,
-                            thumbnail = fileUrl
+                            new
+                            {
+                                type = attachmentType,
+                                payload = new
+                                {
+                                    url = fileUrl,
+                                    thumbnail = attachmentType == "image" ? fileUrl : null
+                                }
+                            }
                         }
-                    }
-                }
                     };
                 }
                 else
