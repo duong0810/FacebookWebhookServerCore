@@ -227,9 +227,9 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-    [FromServices] ZaloDbContext dbContext,
-    [FromForm] string recipientId,
-    [FromForm] IFormFile file)
+        [FromServices] ZaloDbContext dbContext,
+        [FromForm] string recipientId,
+        [FromForm] IFormFile file)
         {
             if (string.IsNullOrEmpty(recipientId))
                 return BadRequest(new { status = "error", details = "recipientId is required." });
@@ -242,14 +242,13 @@ namespace FacebookWebhookServerCore.Controllers
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
                 var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
-                // 1. Upload file lên Zalo
-                // Thay đổi endpoint upload sang v3.0
+                // 1. Upload file lên Zalo   
                 string uploadEndpoint = attachmentType switch
                 {
-                    "image" => "https://openapi.zalo.me/v3.0/oa/upload/image",
-                    "video" => "https://openapi.zalo.me/v3.0/oa/upload/video",
-                    "audio" => "https://openapi.zalo.me/v3.0/oa/upload/audio",
-                    _ => "https://openapi.zalo.me/v3.0/oa/upload/file"
+                    "image" => "https://openapi.zalo.me/v2.0/oa/upload/image",
+                    "video" => "https://openapi.zalo.me/v2.0/oa/upload/video",
+                    "audio" => "https://openapi.zalo.me/v2.0/oa/upload/audio",
+                    _ => "https://openapi.zalo.me/v2.0/oa/upload/file"
                 };
 
                 var client = _httpClientFactory.CreateClient();
@@ -273,22 +272,19 @@ namespace FacebookWebhookServerCore.Controllers
 
                 // 2. Gửi tin nhắn kèm attachment_id
                 string url = "https://openapi.zalo.me/v3.0/oa/message/cs";
-                string attachmentText = "Đây là file từ OA";
-
                 var messagePayload = new
                 {
-                    text = attachmentText,
                     attachments = new[]
                     {
-                new
-                {
-                    type = attachmentType,
-                    payload = new
-                    {
-                        attachment_id = attachmentId
+                        new
+                        {
+                            type = attachmentType,
+                            payload = new
+                            {
+                                attachment_id = attachmentId
+                            }
+                        }
                     }
-                }
-            }
                 };
 
                 var payload = new
