@@ -675,7 +675,7 @@ namespace FacebookWebhookServerCore.Controllers
             {
                 SenderId = _oaId,
                 RecipientId = recipientId,
-                Content = fileInfoJson,
+                Content = fileInfoJson, // Lưu JSON vào Content
                 Time = timestamp,
                 Direction = "outbound"
             };
