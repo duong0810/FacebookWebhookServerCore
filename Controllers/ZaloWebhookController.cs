@@ -107,6 +107,13 @@ namespace FacebookWebhookServerCore.Controllers
             return Ok(messages);
         }
 
+        [HttpGet("profile/{userId}")]
+        public async Task<IActionResult> GetProfile([FromServices] ZaloDbContext dbContext, string userId)
+        {
+            var customer = await GetOrCreateZaloCustomerAsync(dbContext, userId);
+            return Ok(new { Name = customer.Name, AvatarUrl = customer.AvatarUrl });
+        }
+
         [HttpPost]
         public async Task<IActionResult> Post([FromServices] ZaloDbContext dbContext)
         {
@@ -307,42 +314,51 @@ namespace FacebookWebhookServerCore.Controllers
                     if (string.IsNullOrEmpty(fileUrl))
                         return StatusCode(500, new { status = "error", details = "Cannot get file url" });
 
-                    // Upload file lên Zalo để lấy token (nếu vẫn cần gửi file qua Zalo)
-                    var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
-                    using var form = new MultipartFormDataContent();
-                    using var fs = file.OpenReadStream();
-                    form.Add(new StreamContent(fs), "file", file.FileName);
-
-                    var uploadResponse = await client.PostAsync(uploadEndpoint, form);
-                    var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
-                    _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
-
-                    if (!uploadResponse.IsSuccessStatusCode)
-                        return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
-
-                    var doc = JsonDocument.Parse(uploadJson);
-                    if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
-                        return BadRequest("Invalid upload response: missing token");
-
-                    var fileToken = tokenElement.GetString();
-
-                    // Tạo payload gửi file cho Zalo (nếu cần gửi file qua Zalo)
-                    payload = new
+                    // Nếu là file txt thì chỉ gửi link Cloudinary, không upload lên Zalo
+                    if (fileType == "text/plain" || Path.GetExtension(file.FileName).ToLower() == ".txt")
                     {
-                        recipient = new { user_id = recipientId },
-                        message = new
+                        contentForDb = fileUrl;
+                        payload = null; // Không gửi lên Zalo
+                    }
+                    else
+                    {
+                        // Upload file lên Zalo để lấy token
+                        var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
+                        using var form = new MultipartFormDataContent();
+                        using var fs = file.OpenReadStream();
+                        form.Add(new StreamContent(fs), "file", file.FileName);
+
+                        var uploadResponse = await client.PostAsync(uploadEndpoint, form);
+                        var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
+                        _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
+
+                        if (!uploadResponse.IsSuccessStatusCode)
+                            return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
+
+                        var doc = JsonDocument.Parse(uploadJson);
+                        if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
+                            return BadRequest("Invalid upload response: missing token");
+
+                        var fileToken = tokenElement.GetString();
+
+                        // Tạo payload gửi file cho Zalo
+                        payload = new
                         {
-                            attachment = new
+                            recipient = new { user_id = recipientId },
+                            message = new
                             {
-                                type = "file",
-                                payload = new
+                                attachment = new
                                 {
-                                    token = fileToken
+                                    type = "file",
+                                    payload = new
+                                    {
+                                        token = fileToken
+                                    }
                                 }
                             }
-                        }
-                    };
-                    contentForDb = fileUrl; // Lưu url tải file thay vì token
+                        };
+                        contentForDb = fileUrl;
+                    }
                 }
 
                 var payloadJson = JsonSerializer.Serialize(payload);
