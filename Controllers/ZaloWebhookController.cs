@@ -366,13 +366,12 @@ namespace FacebookWebhookServerCore.Controllers
                         Direction = zaloMessage.Direction,
                         SenderName = oaAsCustomer.Name,
                         SenderAvatar = oaAsCustomer.AvatarUrl,
-                        FileName = file.FileName,
                         FileType = file.ContentType,
                         IsImage = fileType.StartsWith("image/"),
                         IsFile = !fileType.StartsWith("image/")
                     });
 
-                    return Ok(new { status = "success", details = responseContent });
+                    return Ok(new { status = "success", url = contentForDb });
                 }
 
                 return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
