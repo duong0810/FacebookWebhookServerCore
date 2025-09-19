@@ -237,15 +237,14 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-        [FromServices] ZaloDbContext dbContext,
-        [FromForm] string recipientId,
-        [FromForm] IFormFile file)
+    [FromServices] ZaloDbContext dbContext,
+    [FromForm] string recipientId,
+    [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
             try
             {
-                // Log giá trị ContentType để debug
                 _logger.LogInformation($"[DEBUG] file.ContentType: {file.ContentType}, file.Name: {file.Name}, file.FileName: {file.FileName}");
 
                 var client = _httpClientFactory.CreateClient();
@@ -257,23 +256,48 @@ namespace FacebookWebhookServerCore.Controllers
                 string contentForDb = "";
                 string fileType = file.ContentType.ToLower();
 
+                // Upload lên Cloudinary
+                var uploadParams = fileType.StartsWith("image/")
+                    ? new ImageUploadParams { File = new FileDescription(file.FileName, file.OpenReadStream()) }
+                    : new RawUploadParams { File = new FileDescription(file.FileName, file.OpenReadStream()) };
 
-                if (fileType.StartsWith("image/"))
+                var uploadResult = _cloudinary.Upload(uploadParams);
+                if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+                    return StatusCode(500, new { status = "error", details = "Upload file failed" });
+
+                var fileUrl = uploadResult.SecureUrl?.ToString();
+                if (string.IsNullOrEmpty(fileUrl))
+                    return StatusCode(500, new { status = "error", details = "Cannot get file url" });
+
+                contentForDb = fileUrl; // Chỉ lưu link Cloudinary
+
+                // Nếu là file txt thì không gửi lên Zalo
+                if (fileType == "text/plain" || Path.GetExtension(file.FileName).ToLower() == ".txt")
                 {
-                    // Upload ảnh lên Cloudinary để lấy link public
-                    var uploadParams = new ImageUploadParams
-                    {
-                        File = new FileDescription(file.FileName, file.OpenReadStream())
-                    };
-                    var uploadResult = _cloudinary.Upload(uploadParams);
-                    if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
-                        return StatusCode(500, new { status = "error", details = "Upload image failed" });
+                    payload = null;
+                }
+                else
+                {
+                    // Upload lên Zalo để lấy token
+                    var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
+                    using var form = new MultipartFormDataContent();
+                    using var fs = file.OpenReadStream();
+                    form.Add(new StreamContent(fs), "file", file.FileName);
 
-                    var imageUrl = uploadResult.SecureUrl?.ToString();
-                    if (string.IsNullOrEmpty(imageUrl))
-                        return StatusCode(500, new { status = "error", details = "Cannot get image url" });
+                    var uploadResponse = await client.PostAsync(uploadEndpoint, form);
+                    var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
+                    _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
 
-                    // Tạo payload gửi ảnh (template/media)
+                    if (!uploadResponse.IsSuccessStatusCode)
+                        return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
+
+                    var doc = JsonDocument.Parse(uploadJson);
+                    if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
+                        return BadRequest("Invalid upload response: missing token");
+
+                    var fileToken = tokenElement.GetString();
+
+                    // Tạo payload gửi file cho Zalo
                     payload = new
                     {
                         recipient = new { user_id = recipientId },
@@ -281,129 +305,61 @@ namespace FacebookWebhookServerCore.Controllers
                         {
                             attachment = new
                             {
-                                type = "template",
+                                type = "file",
                                 payload = new
                                 {
-                                    template_type = "media",
-                                    elements = new[]
-                                    {
-                        new
-                        {
-                            media_type = "image",
-                            url = imageUrl
-                        }
-                    }
+                                    token = fileToken
                                 }
                             }
                         }
                     };
-                    contentForDb = imageUrl;
                 }
-                else
+
+                if (payload != null)
                 {
-                    // Upload file lên Cloudinary để lấy link public
-                    var uploadParams = new RawUploadParams
-                    {
-                        File = new FileDescription(file.FileName, file.OpenReadStream())
-                    };
-                    var uploadResult = _cloudinary.Upload(uploadParams);
-                    if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
-                        return StatusCode(500, new { status = "error", details = "Upload file failed" });
+                    var payloadJson = JsonSerializer.Serialize(payload);
+                    _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
 
-                    var fileUrl = uploadResult.SecureUrl?.ToString();
-                    if (string.IsNullOrEmpty(fileUrl))
-                        return StatusCode(500, new { status = "error", details = "Cannot get file url" });
+                    var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
+                    var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
+                    var response = await client.PostAsync(url, content);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
 
-                    // Nếu là file txt thì chỉ gửi link Cloudinary, không upload lên Zalo
-                    if (fileType == "text/plain" || Path.GetExtension(file.FileName).ToLower() == ".txt")
-                    {
-                        contentForDb = fileUrl;
-                        payload = null; // Không gửi lên Zalo
-                    }
-                    else
-                    {
-                        // Upload file lên Zalo để lấy token
-                        var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
-                        using var form = new MultipartFormDataContent();
-                        using var fs = file.OpenReadStream();
-                        form.Add(new StreamContent(fs), "file", file.FileName);
-
-                        var uploadResponse = await client.PostAsync(uploadEndpoint, form);
-                        var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
-                        _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
-
-                        if (!uploadResponse.IsSuccessStatusCode)
-                            return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
-
-                        var doc = JsonDocument.Parse(uploadJson);
-                        if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
-                            return BadRequest("Invalid upload response: missing token");
-
-                        var fileToken = tokenElement.GetString();
-
-                        // Tạo payload gửi file cho Zalo
-                        payload = new
-                        {
-                            recipient = new { user_id = recipientId },
-                            message = new
-                            {
-                                attachment = new
-                                {
-                                    type = "file",
-                                    payload = new
-                                    {
-                                        token = fileToken
-                                    }
-                                }
-                            }
-                        };
-                        contentForDb = fileUrl;
-                    }
+                    if (!response.IsSuccessStatusCode)
+                        return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
                 }
 
-                var payloadJson = JsonSerializer.Serialize(payload);
-                _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
+                var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
-                var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(url, content);
-                var responseContent = await response.Content.ReadAsStringAsync();
-                _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
-
-                if (response.IsSuccessStatusCode)
+                // Chỉ lưu link Cloudinary vào DB
+                var zaloMessage = new ZaloMessage
                 {
-                    var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
+                    SenderId = _oaId,
+                    RecipientId = recipientId,
+                    Content = contentForDb,
+                    Time = DateTime.UtcNow,
+                    Direction = "outbound"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
 
-                    var zaloMessage = new ZaloMessage
-                    {
-                        SenderId = _oaId,
-                        RecipientId = recipientId,
-                        Content = contentForDb,
-                        Time = DateTime.UtcNow,
-                        Direction = "outbound"
-                    };
-                    dbContext.ZaloMessages.Add(zaloMessage);
-                    await dbContext.SaveChangesAsync();
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = oaAsCustomer.Name,
+                    SenderAvatar = oaAsCustomer.AvatarUrl,
+                    FileType = file.ContentType,
+                    IsImage = fileType.StartsWith("image/"),
+                    IsFile = !fileType.StartsWith("image/")
+                });
 
-                    await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                    {
-                        Id = zaloMessage.Id,
-                        SenderId = zaloMessage.SenderId,
-                        RecipientId = zaloMessage.RecipientId,
-                        Content = zaloMessage.Content,
-                        Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                        Direction = zaloMessage.Direction,
-                        SenderName = oaAsCustomer.Name,
-                        SenderAvatar = oaAsCustomer.AvatarUrl,
-                        FileType = file.ContentType,
-                        IsImage = fileType.StartsWith("image/"),
-                        IsFile = !fileType.StartsWith("image/")
-                    });
-
-                    return Ok(new { status = "success", url = contentForDb });
-                }
-
-                return StatusCode((int)response.StatusCode, new { status = "error", details = responseContent });
+                return Ok(new { status = "success", url = contentForDb });
             }
             catch (Exception ex)
             {
@@ -696,25 +652,17 @@ namespace FacebookWebhookServerCore.Controllers
                 var fileName = payload.GetProperty("name").GetString();
                 var fileType = payload.GetProperty("type").GetString();
 
-                var zaloMessage = new ZaloMessage
+                // KHÔNG lưu lại vào DB nữa
+                _logger.LogInformation("Bỏ qua lưu file outbound từ OA vào DB: {fileUrl}", fileUrl);
+
+                // Nếu vẫn muốn gửi lên SignalR để FE nhận event xác nhận, có thể gửi thông báo xác nhận, nhưng KHÔNG lưu DB
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
                 {
                     SenderId = _oaId,
                     RecipientId = recipientId,
-                    Content = fileUrl,
-                    Time = timestamp,
-                    Direction = "outbound"
-                };
-                dbContext.ZaloMessages.Add(zaloMessage);
-                await dbContext.SaveChangesAsync();
-
-                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                {
-                    Id = zaloMessage.Id,
-                    SenderId = zaloMessage.SenderId,
-                    RecipientId = zaloMessage.RecipientId,
-                    Content = zaloMessage.Content, // chính là url tải file
-                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                    Direction = zaloMessage.Direction,
+                    Content = "", // hoặc truyền link Cloudinary nếu cần
+                    Time = timestamp.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = "outbound",
                     SenderName = oaCustomer.Name,
                     SenderAvatar = oaCustomer.AvatarUrl,
                     FileType = fileType,
