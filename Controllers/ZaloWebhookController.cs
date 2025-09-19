@@ -143,6 +143,9 @@ namespace FacebookWebhookServerCore.Controllers
                         case "oa_send_image":
                             await ProcessSendMessageConfirmation(dbContext, root);
                             break;
+                        case "oa_send_file":
+                            await ProcessOASendFile(dbContext, root);
+                            break;
                         default:
                             _logger.LogWarning("Unknown event: {EventName}", eventName);
                             break;
@@ -637,6 +640,51 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderName = oaCustomer.Name,
                     SenderAvatar = oaCustomer.AvatarUrl,
                     IsImage = true // Giả định là image từ event oa_send_image
+                });
+            }
+        }
+        private async Task ProcessOASendFile(ZaloDbContext dbContext, JsonElement data)
+        {
+            var recipientId = data.GetProperty("recipient").GetProperty("id").GetString();
+            var timestampStr = data.GetProperty("timestamp").GetString();
+            var timestampLong = long.Parse(timestampStr);
+            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
+
+            var attachments = data.GetProperty("message").GetProperty("attachments");
+            var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
+            var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
+
+            foreach (var attachment in attachments.EnumerateArray())
+            {
+                var payload = attachment.GetProperty("payload");
+                var fileUrl = payload.GetProperty("url").GetString();
+                var fileName = payload.GetProperty("name").GetString();
+                var fileType = payload.GetProperty("type").GetString();
+
+                var zaloMessage = new ZaloMessage
+                {
+                    SenderId = _oaId,
+                    RecipientId = recipientId,
+                    Content = fileUrl,
+                    Time = timestamp,
+                    Direction = "outbound"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
+
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = oaCustomer.Name,
+                    SenderAvatar = oaCustomer.AvatarUrl,
+                    FileName = fileName,
+                    FileType = fileType,
+                    IsFile = true
                 });
             }
         }
