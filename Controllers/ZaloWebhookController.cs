@@ -311,7 +311,7 @@ namespace FacebookWebhookServerCore.Controllers
 
                     var fileToken = tokenElement.GetString();
 
-                    // Gọi API lấy URL file từ token
+                    // Gọi API lấy URL file từ token (chỉ cho ảnh/video)
                     string fileUrl = "";
                     var mediaInfoUrl = $"https://openapi.zalo.me/v2.0/oa/getmedia?token={fileToken}";
                     var mediaInfoRequest = new HttpRequestMessage(System.Net.Http.HttpMethod.Get, mediaInfoUrl);
@@ -329,8 +329,15 @@ namespace FacebookWebhookServerCore.Controllers
                         }
                     }
 
+                    // Nếu là file tài liệu, không có url, chỉ trả về token
                     if (string.IsNullOrEmpty(fileUrl))
-                        return StatusCode(500, new { status = "error", details = "Không lấy được URL file từ Zalo" });
+                    {
+                        contentForDb = fileToken;
+                    }
+                    else
+                    {
+                        contentForDb = fileUrl;
+                    }
 
                     // Tạo payload gửi file
                     payload = new
@@ -348,7 +355,6 @@ namespace FacebookWebhookServerCore.Controllers
                             }
                         }
                     };
-                    contentForDb = fileUrl;
                 }
 
                 var payloadJson = JsonSerializer.Serialize(payload);
