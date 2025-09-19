@@ -230,14 +230,15 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-    [FromServices] ZaloDbContext dbContext,
-    [FromForm] string recipientId,
-    [FromForm] IFormFile file)
+[FromServices] ZaloDbContext dbContext,
+[FromForm] string recipientId,
+[FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
             try
             {
+                // Log giá trị ContentType để debug
                 _logger.LogInformation($"[DEBUG] file.ContentType: {file.ContentType}, file.Name: {file.Name}, file.FileName: {file.FileName}");
 
                 var client = _httpClientFactory.CreateClient();
@@ -248,6 +249,7 @@ namespace FacebookWebhookServerCore.Controllers
                 object payload;
                 string contentForDb = "";
                 string fileType = file.ContentType.ToLower();
+
 
                 if (fileType.StartsWith("image/"))
                 {
@@ -278,12 +280,12 @@ namespace FacebookWebhookServerCore.Controllers
                                     template_type = "media",
                                     elements = new[]
                                     {
-                                new
-                                {
-                                    media_type = "image",
-                                    url = imageUrl
-                                }
-                            }
+                        new
+                        {
+                            media_type = "image",
+                            url = imageUrl
+                        }
+                    }
                                 }
                             }
                         }
@@ -311,34 +313,6 @@ namespace FacebookWebhookServerCore.Controllers
 
                     var fileToken = tokenElement.GetString();
 
-                    // Gọi API lấy URL file từ token (chỉ cho ảnh/video)
-                    string fileUrl = "";
-                    var mediaInfoUrl = $"https://openapi.zalo.me/v2.0/oa/getmedia?token={fileToken}";
-                    var mediaInfoRequest = new HttpRequestMessage(System.Net.Http.HttpMethod.Get, mediaInfoUrl);
-                    mediaInfoRequest.Headers.Add("access_token", accessToken);
-                    var mediaInfoResponse = await client.SendAsync(mediaInfoRequest);
-                    var mediaInfoJson = await mediaInfoResponse.Content.ReadAsStringAsync();
-
-                    if (mediaInfoResponse.IsSuccessStatusCode)
-                    {
-                        var mediaDoc = JsonDocument.Parse(mediaInfoJson);
-                        if (mediaDoc.RootElement.TryGetProperty("data", out var mediaData) &&
-                            mediaData.TryGetProperty("url", out var urlElement))
-                        {
-                            fileUrl = urlElement.GetString();
-                        }
-                    }
-
-                    // Nếu là file tài liệu, không có url, chỉ trả về token
-                    if (string.IsNullOrEmpty(fileUrl))
-                    {
-                        contentForDb = fileToken;
-                    }
-                    else
-                    {
-                        contentForDb = fileUrl;
-                    }
-
                     // Tạo payload gửi file
                     payload = new
                     {
@@ -355,6 +329,7 @@ namespace FacebookWebhookServerCore.Controllers
                             }
                         }
                     };
+                    contentForDb = fileToken;
                 }
 
                 var payloadJson = JsonSerializer.Serialize(payload);
@@ -396,7 +371,6 @@ namespace FacebookWebhookServerCore.Controllers
                         IsFile = !fileType.StartsWith("image/")
                     });
 
-                    // Trả về đúng URL file cho FE
                     return Ok(new { status = "success", url = contentForDb });
                 }
 
