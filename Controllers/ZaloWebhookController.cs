@@ -456,9 +456,11 @@ namespace FacebookWebhookServerCore.Controllers
 
                     var response = await client.GetAsync(url);
 
+                    var content = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation("Zalo profile response for user {UserId}: {Content}", userId, content); // Thêm dòng này
+
                     if (response.IsSuccessStatusCode)
                     {
-                        var content = await response.Content.ReadAsStringAsync();
                         using var doc = JsonDocument.Parse(content);
                         var data = doc.RootElement;
 
@@ -482,6 +484,10 @@ namespace FacebookWebhookServerCore.Controllers
                             await dbContext.SaveChangesAsync();
                         }
                     }
+                    else
+                    {
+                        _logger.LogWarning("Zalo profile API failed for user {UserId}: {Content}", userId, content); // Thêm dòng này
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -503,9 +509,6 @@ namespace FacebookWebhookServerCore.Controllers
             }
             return customer;
         }
-
-
-
 
         private async Task ProcessTextMessage(ZaloDbContext dbContext, JsonElement data)
         {
