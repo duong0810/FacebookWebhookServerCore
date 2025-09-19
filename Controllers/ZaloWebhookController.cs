@@ -235,55 +235,104 @@ namespace FacebookWebhookServerCore.Controllers
 
             try
             {
-                // 1. Upload file lên Zalo để lấy token
                 var client = _httpClientFactory.CreateClient();
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                 client.DefaultRequestHeaders.Clear();
                 client.DefaultRequestHeaders.Add("access_token", accessToken);
 
-                var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
-                using var form = new MultipartFormDataContent();
-                using var fs = file.OpenReadStream();
-                form.Add(new StreamContent(fs), "file", file.FileName);
+                object payload;
+                string contentForDb = "";
+                string fileType = file.ContentType.ToLower();
 
-                var uploadResponse = await client.PostAsync(uploadEndpoint, form);
-                var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
-                _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
-
-                if (!uploadResponse.IsSuccessStatusCode)
-                    return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
-
-                var doc = JsonDocument.Parse(uploadJson);
-                if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
-                    return BadRequest("Invalid upload response: missing token");
-
-                var fileToken = tokenElement.GetString();
-
-                // 2. Gửi tin nhắn đính kèm file
-                var payload = new
+                if (fileType.StartsWith("image/"))
                 {
-                    recipient = new { user_id = recipientId },
-                    message = new
+                    // Upload ảnh lên Cloudinary để lấy link public
+                    var uploadParams = new ImageUploadParams
                     {
-                        attachment = new
+                        File = new FileDescription(file.FileName, file.OpenReadStream())
+                    };
+                    var uploadResult = _cloudinary.Upload(uploadParams);
+                    if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+                        return StatusCode(500, new { status = "error", details = "Upload image failed" });
+
+                    var imageUrl = uploadResult.SecureUrl?.ToString();
+                    if (string.IsNullOrEmpty(imageUrl))
+                        return StatusCode(500, new { status = "error", details = "Cannot get image url" });
+
+                    // Tạo payload gửi ảnh (template/media)
+                    payload = new
+                    {
+                        recipient = new { user_id = recipientId },
+                        message = new
                         {
-                            type = "file",
-                            payload = new
+                            attachment = new
                             {
-                                token = fileToken
+                                type = "template",
+                                payload = new
+                                {
+                                    template_type = "media",
+                                    elements = new[]
+                                    {
+                                new
+                                {
+                                    media_type = "image",
+                                    url = imageUrl
+                                }
+                            }
+                                }
                             }
                         }
-                    }
-                };
+                    };
+                    contentForDb = imageUrl;
+                }
+                else
+                {
+                    // Upload file lên Zalo để lấy token
+                    var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
+                    using var form = new MultipartFormDataContent();
+                    using var fs = file.OpenReadStream();
+                    form.Add(new StreamContent(fs), "file", file.FileName);
+
+                    var uploadResponse = await client.PostAsync(uploadEndpoint, form);
+                    var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
+                    _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
+
+                    if (!uploadResponse.IsSuccessStatusCode)
+                        return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
+
+                    var doc = JsonDocument.Parse(uploadJson);
+                    if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
+                        return BadRequest("Invalid upload response: missing token");
+
+                    var fileToken = tokenElement.GetString();
+
+                    // Tạo payload gửi file
+                    payload = new
+                    {
+                        recipient = new { user_id = recipientId },
+                        message = new
+                        {
+                            attachment = new
+                            {
+                                type = "file",
+                                payload = new
+                                {
+                                    token = fileToken
+                                }
+                            }
+                        }
+                    };
+                    contentForDb = fileToken;
+                }
 
                 var payloadJson = JsonSerializer.Serialize(payload);
-                _logger.LogInformation("Payload gửi lên Zalo (file): {Payload}", payloadJson);
+                _logger.LogInformation("Payload gửi lên Zalo: {Payload}", payloadJson);
 
                 var url = "https://openapi.zalo.me/v3.0/oa/message/cs";
                 var content = new StringContent(payloadJson, System.Text.Encoding.UTF8, "application/json");
                 var response = await client.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
-                _logger.LogInformation("Response từ Zalo (file): {Response}", responseContent);
+                _logger.LogInformation("Response từ Zalo: {Response}", responseContent);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -293,7 +342,7 @@ namespace FacebookWebhookServerCore.Controllers
                     {
                         SenderId = _oaId,
                         RecipientId = recipientId,
-                        Content = fileToken,
+                        Content = contentForDb,
                         Time = DateTime.UtcNow,
                         Direction = "outbound"
                     };
@@ -312,7 +361,8 @@ namespace FacebookWebhookServerCore.Controllers
                         SenderAvatar = oaAsCustomer.AvatarUrl,
                         FileName = file.FileName,
                         FileType = file.ContentType,
-                        IsFile = true
+                        IsImage = fileType.StartsWith("image/"),
+                        IsFile = !fileType.StartsWith("image/")
                     });
 
                     return Ok(new { status = "success", details = responseContent });
@@ -322,7 +372,7 @@ namespace FacebookWebhookServerCore.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending file attachment to Zalo");
+                _logger.LogError(ex, "Error sending attachment to Zalo");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
