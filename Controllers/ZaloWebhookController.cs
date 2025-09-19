@@ -230,9 +230,9 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-[FromServices] ZaloDbContext dbContext,
-[FromForm] string recipientId,
-[FromForm] IFormFile file)
+        [FromServices] ZaloDbContext dbContext,
+        [FromForm] string recipientId,
+        [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
@@ -294,7 +294,20 @@ namespace FacebookWebhookServerCore.Controllers
                 }
                 else
                 {
-                    // Upload file lên Zalo để lấy token
+                    // Upload file lên Cloudinary để lấy link public
+                    var uploadParams = new RawUploadParams
+                    {
+                        File = new FileDescription(file.FileName, file.OpenReadStream())
+                    };
+                    var uploadResult = _cloudinary.Upload(uploadParams);
+                    if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+                        return StatusCode(500, new { status = "error", details = "Upload file failed" });
+
+                    var fileUrl = uploadResult.SecureUrl?.ToString();
+                    if (string.IsNullOrEmpty(fileUrl))
+                        return StatusCode(500, new { status = "error", details = "Cannot get file url" });
+
+                    // Upload file lên Zalo để lấy token (nếu vẫn cần gửi file qua Zalo)
                     var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
                     using var form = new MultipartFormDataContent();
                     using var fs = file.OpenReadStream();
@@ -313,7 +326,7 @@ namespace FacebookWebhookServerCore.Controllers
 
                     var fileToken = tokenElement.GetString();
 
-                    // Tạo payload gửi file
+                    // Tạo payload gửi file cho Zalo (nếu cần gửi file qua Zalo)
                     payload = new
                     {
                         recipient = new { user_id = recipientId },
@@ -329,7 +342,7 @@ namespace FacebookWebhookServerCore.Controllers
                             }
                         }
                     };
-                    contentForDb = fileToken;
+                    contentForDb = fileUrl; // Lưu url tải file thay vì token
                 }
 
                 var payloadJson = JsonSerializer.Serialize(payload);
@@ -680,14 +693,14 @@ namespace FacebookWebhookServerCore.Controllers
                     Id = zaloMessage.Id,
                     SenderId = zaloMessage.SenderId,
                     RecipientId = zaloMessage.RecipientId,
-                    Content = zaloMessage.Content,
+                    Content = zaloMessage.Content, // chính là url tải file
                     Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
                     Direction = zaloMessage.Direction,
                     SenderName = oaCustomer.Name,
                     SenderAvatar = oaCustomer.AvatarUrl,
-                    FileName = fileName,
                     FileType = fileType,
-                    IsFile = true
+                    IsImage = fileType.StartsWith("image/"),
+                    IsFile = !fileType.StartsWith("image/")
                 });
             }
         }
