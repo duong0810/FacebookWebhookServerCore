@@ -230,14 +230,17 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-    [FromServices] ZaloDbContext dbContext,
-    [FromForm] string recipientId,
-    [FromForm] IFormFile file)
+        [FromServices] ZaloDbContext dbContext,
+        [FromForm] string recipientId,
+        [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
             try
             {
+                // Log giá trị ContentType để debug
+                _logger.LogInformation($"[DEBUG] file.ContentType: {file.ContentType}, file.Name: {file.Name}, file.FileName: {file.FileName}");
+
                 var client = _httpClientFactory.CreateClient();
                 var accessToken = await _zaloAuthService.GetAccessTokenAsync();
                 client.DefaultRequestHeaders.Clear();
@@ -246,6 +249,7 @@ namespace FacebookWebhookServerCore.Controllers
                 object payload;
                 string contentForDb = "";
                 string fileType = file.ContentType.ToLower();
+
 
                 if (fileType.StartsWith("image/"))
                 {
