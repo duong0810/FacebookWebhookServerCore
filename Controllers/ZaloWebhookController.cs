@@ -279,7 +279,13 @@ namespace FacebookWebhookServerCore.Controllers
                 else
                 {
                     // Upload lên Zalo để lấy token
-                    var uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
+                    // Chọn endpoint phù hợp cho loại file
+                    string uploadEndpoint;
+                    if (fileType.StartsWith("image/"))
+                        uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/image";
+                    else
+                        uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
+
                     using var form = new MultipartFormDataContent();
                     using var fs = file.OpenReadStream();
                     form.Add(new StreamContent(fs), "file", file.FileName);
@@ -287,7 +293,7 @@ namespace FacebookWebhookServerCore.Controllers
                     var uploadResponse = await client.PostAsync(uploadEndpoint, form);
                     var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
                     _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
-
+                 
                     if (!uploadResponse.IsSuccessStatusCode)
                         return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
 
