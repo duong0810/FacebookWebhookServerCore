@@ -11,7 +11,7 @@ using Webhook_Message.Data;
 namespace Webhook_Message.Migrations.ZaloDb
 {
     [DbContext(typeof(ZaloDbContext))]
-    [Migration("20250920040501_AddZaloMessageStatus")]
+    [Migration("20250920041701_AddZaloMessageStatus")]
     partial class AddZaloMessageStatus
     {
         /// <inheritdoc />
@@ -61,6 +61,13 @@ namespace Webhook_Message.Migrations.ZaloDb
 
                     b.Property<string>("SenderId")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StatusTime")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("Time")

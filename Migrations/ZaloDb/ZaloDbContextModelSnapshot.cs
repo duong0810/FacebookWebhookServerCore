@@ -60,6 +60,13 @@ namespace Webhook_Message.Migrations.ZaloDb
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StatusTime")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("Time")
                         .HasColumnType("TEXT");
 
