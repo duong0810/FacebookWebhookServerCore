@@ -216,7 +216,9 @@ namespace FacebookWebhookServerCore.Controllers
                         RecipientId = request.RecipientId,
                         Content = request.Message,
                         Time = DateTime.UtcNow,
-                        Direction = "outbound"
+                        Direction = "outbound",
+                        Status = "sent"
+
                     };
                     dbContext.ZaloMessages.Add(zaloMessage);
                     await dbContext.SaveChangesAsync();
@@ -383,7 +385,9 @@ namespace FacebookWebhookServerCore.Controllers
                     RecipientId = recipientId,
                     Content = contentForDb,
                     Time = DateTime.UtcNow,
-                    Direction = "outbound"
+                    Direction = "outbound",
+                    Status = "sent"
+
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
@@ -528,7 +532,8 @@ namespace FacebookWebhookServerCore.Controllers
                 RecipientId = _oaId,
                 Content = message,
                 Time = timestamp,
-                Direction = "inbound"
+                Direction = "inbound",
+                Status = "sent"
             };
             dbContext.ZaloMessages.Add(zaloMessage);
             await dbContext.SaveChangesAsync();
@@ -574,7 +579,8 @@ namespace FacebookWebhookServerCore.Controllers
                 RecipientId = _oaId,
                 Content = fileUrl,
                 Time = timestamp,
-                Direction = "inbound"
+                Direction = "inbound",
+                Status = "sent"
             };
             dbContext.ZaloMessages.Add(zaloMessage);
             await dbContext.SaveChangesAsync();
@@ -616,7 +622,9 @@ namespace FacebookWebhookServerCore.Controllers
                     RecipientId = _oaId,
                     Content = imageUrl,
                     Time = timestamp,
-                    Direction = "inbound"
+                    Direction = "inbound",
+                    Status = "sent"
+
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
@@ -659,7 +667,8 @@ namespace FacebookWebhookServerCore.Controllers
                     RecipientId = recipientId,
                     Content = attachmentId, // Lưu attachment_id thay vì url
                     Time = timestamp,
-                    Direction = "outbound"
+                    Direction = "outbound",
+                    Status = "sent"
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
