@@ -71,12 +71,14 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderId = m.SenderId,
                     RecipientId = m.RecipientId,
                     Content = m.Content,
-                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")),
                     Direction = m.Direction,
                     SenderName = m.Sender != null ? m.Sender.Name : null,
                     SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
                     RecipientName = m.Recipient != null ? m.Recipient.Name : null,
-                    RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null
+                    RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null,
+                    Status = m.Status == "received" ? "Đã nhận" : m.Status == "seen" ? "Đã xem" : "Đã gửi",
+                    StatusTime = m.StatusTime.HasValue ? m.StatusTime.Value.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")) : null
                 })
                 .ToListAsync();
             return Ok(messages);
@@ -96,12 +98,14 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderId = m.SenderId,
                     RecipientId = m.RecipientId,
                     Content = m.Content,
-                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")),
                     Direction = m.Direction,
                     SenderName = m.Sender != null ? m.Sender.Name : null,
                     SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
                     RecipientName = m.Recipient != null ? m.Recipient.Name : null,
-                    RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null
+                    RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null,
+                    Status = m.Status == "received" ? "Đã nhận" : m.Status == "seen" ? "Đã xem" : "Đã gửi",
+                    StatusTime = m.StatusTime.HasValue ? m.StatusTime.Value.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")) : null
                 })
                 .ToListAsync();
             return Ok(messages);
@@ -152,6 +156,12 @@ namespace FacebookWebhookServerCore.Controllers
                             break;
                         case "oa_send_file":
                             await ProcessOASendFile(dbContext, root);
+                            break;
+                        case "user_received_message":
+                            await ProcessMessageStatus(dbContext, root, "received");
+                            break;
+                        case "user_seen_message":
+                            await ProcessMessageStatus(dbContext, root, "seen");
                             break;
                         default:
                             _logger.LogWarning("Unknown event: {EventName}", eventName);
@@ -705,6 +715,30 @@ namespace FacebookWebhookServerCore.Controllers
                 });
             }
         }
+        private async Task ProcessMessageStatus(ZaloDbContext dbContext, JsonElement data, string status)
+        {
+            // Giả sử webhook trả về message_id và timestamp
+            var messageId = data.GetProperty("message_id").GetInt32();
+            var timestampStr = data.GetProperty("timestamp").GetString();
+            var timestampLong = long.Parse(timestampStr);
+            var statusTime = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
+
+            var zaloMessage = await dbContext.ZaloMessages.FindAsync(messageId);
+            if (zaloMessage != null)
+            {
+                zaloMessage.Status = status;
+                zaloMessage.StatusTime = statusTime;
+                await dbContext.SaveChangesAsync();
+
+                // Gửi thông báo qua SignalR nếu cần
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessageStatus", new
+                {
+                    Id = zaloMessage.Id,
+                    Status = status == "received" ? "Đã nhận" : "Đã xem",
+                    StatusTime = zaloMessage.StatusTime?.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new System.Globalization.CultureInfo("vi-VN"))
+                });
+            }
+        }
         private async Task ProcessSendMessageConfirmation(ZaloDbContext dbContext, JsonElement data)
         {
             // Implement logic if needed for delivery confirmation
@@ -712,4 +746,4 @@ namespace FacebookWebhookServerCore.Controllers
 
 
     }
-}
+}   

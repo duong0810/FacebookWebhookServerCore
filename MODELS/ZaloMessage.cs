@@ -14,6 +14,8 @@ namespace Webhook_Message.Models
         public DateTime Time { get; set; }
         public string Direction { get; set; }
         // "inbound" hoặc "outbound"
+        public string Status { get; set; } // "sent", "received", "seen"
+        public DateTime? StatusTime { get; set; } // Thời điểm cập nhật trạng thái
 
         [ForeignKey("SenderId")]
         public virtual ZaloCustomer? Sender { get; set; }
