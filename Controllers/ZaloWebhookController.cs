@@ -278,8 +278,7 @@ namespace FacebookWebhookServerCore.Controllers
                 }
                 else
                 {
-                    // Upload lên Zalo để lấy token
-                    // Chọn endpoint phù hợp cho loại file
+                    // Upload lên Zalo để lấy token hoặc attachment_id
                     string uploadEndpoint;
                     if (fileType.StartsWith("image/"))
                         uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/image";
@@ -293,32 +292,61 @@ namespace FacebookWebhookServerCore.Controllers
                     var uploadResponse = await client.PostAsync(uploadEndpoint, form);
                     var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
                     _logger.LogInformation("Upload file response: {UploadJson}", uploadJson);
-                 
+
                     if (!uploadResponse.IsSuccessStatusCode)
                         return StatusCode((int)uploadResponse.StatusCode, new { status = "error", details = uploadJson });
 
                     var doc = JsonDocument.Parse(uploadJson);
-                    if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("token", out var tokenElement))
-                        return BadRequest("Invalid upload response: missing token");
+                    if (!doc.RootElement.TryGetProperty("data", out var data))
+                        return BadRequest("Invalid upload response: missing data");
 
-                    var fileToken = tokenElement.GetString();
-
-                    // Tạo payload gửi file cho Zalo
-                    payload = new
+                    string fileToken = null;
+                    if (fileType.StartsWith("image/"))
                     {
-                        recipient = new { user_id = recipientId },
-                        message = new
+                        if (!data.TryGetProperty("attachment_id", out var attachmentIdElement))
+                            return BadRequest("Invalid upload response: missing attachment_id");
+                        fileToken = attachmentIdElement.GetString();
+
+                        // Tạo payload gửi ảnh cho Zalo
+                        payload = new
                         {
-                            attachment = new
+                            recipient = new { user_id = recipientId },
+                            message = new
                             {
-                                type = "file",
-                                payload = new
+                                attachment = new
                                 {
-                                    token = fileToken
+                                    type = "image",
+                                    payload = new
+                                    {
+                                        attachment_id = fileToken
+                                    }
                                 }
                             }
-                        }
-                    };
+                        };
+                    }
+                    else
+                    {
+                        if (!data.TryGetProperty("token", out var tokenElement))
+                            return BadRequest("Invalid upload response: missing token");
+                        fileToken = tokenElement.GetString();
+
+                        // Tạo payload gửi file cho Zalo
+                        payload = new
+                        {
+                            recipient = new { user_id = recipientId },
+                            message = new
+                            {
+                                attachment = new
+                                {
+                                    type = "file",
+                                    payload = new
+                                    {
+                                        token = fileToken
+                                    }
+                                }
+                            }
+                        };
+                    }
                 }
 
                 if (payload != null)
