@@ -108,13 +108,18 @@ namespace Webhook_Message.Services
 
             var content = new FormUrlEncodedContent(new[]
             {
-        new KeyValuePair<string, string>("app_id", appId),
-        new KeyValuePair<string, string>("secret_key", appSecret),
-        new KeyValuePair<string, string>("grant_type", "refresh_token"),
-        new KeyValuePair<string, string>("refresh_token", refreshToken)
-    });
+                new KeyValuePair<string, string>("app_id", appId),
+                new KeyValuePair<string, string>("grant_type", "refresh_token"),
+                new KeyValuePair<string, string>("refresh_token", refreshToken)
+            });
 
-            var response = await _httpClient.PostAsync("https://oauth.zaloapp.com/v4/oa/access_token", content);
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth.zaloapp.com/v4/oa/access_token")
+            {
+                Content = content
+            };
+            request.Headers.Add("secret_key", appSecret);
+
+            var response = await _httpClient.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
