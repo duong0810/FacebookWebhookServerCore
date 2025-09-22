@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Webhook_Message.Migrations.ZaloDb
 {
     /// <inheritdoc />
-    public partial class FixModelAfterDuplicate : Migration
+    public partial class AddZaloTokensAgain : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
