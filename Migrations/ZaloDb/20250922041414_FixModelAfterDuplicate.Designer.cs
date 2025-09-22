@@ -11,8 +11,8 @@ using Webhook_Message.Data;
 namespace Webhook_Message.Migrations.ZaloDb
 {
     [DbContext(typeof(ZaloDbContext))]
-    [Migration("20250920041701_AddZaloMessageStatus")]
-    partial class AddZaloMessageStatus
+    [Migration("20250922041414_FixModelAfterDuplicate")]
+    partial class FixModelAfterDuplicate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
