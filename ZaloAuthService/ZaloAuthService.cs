@@ -100,16 +100,16 @@ namespace Webhook_Message.Services
 
         private async Task<ZaloTokenInfo> RefreshAccessTokenAsync(string refreshToken)
         {
-            var oaSecret = _configuration["ZaloOA:OaSecret"];
-            var oaId = _configuration["ZaloOA:OaId"];
+            var appId = _configuration["ZaloApp:AppId"];
+            var appSecret = _configuration["ZaloApp:AppSecret"];
 
-            if (string.IsNullOrEmpty(oaSecret) || string.IsNullOrEmpty(oaId))
-                throw new Exception("OA Secret hoặc OA Id bị thiếu trong cấu hình. Vui lòng kiểm tra appsettings.json.");
+            if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret))
+                throw new Exception("AppId hoặc AppSecret bị thiếu trong cấu hình. Vui lòng kiểm tra appsettings.json.");
 
             var content = new FormUrlEncodedContent(new[]
             {
-        new KeyValuePair<string, string>("app_id", oaId),
-        new KeyValuePair<string, string>("secret_key", oaSecret),
+        new KeyValuePair<string, string>("app_id", appId),
+        new KeyValuePair<string, string>("secret_key", appSecret),
         new KeyValuePair<string, string>("grant_type", "refresh_token"),
         new KeyValuePair<string, string>("refresh_token", refreshToken)
     });
