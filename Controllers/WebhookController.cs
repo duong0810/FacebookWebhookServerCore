@@ -78,11 +78,19 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpGet("messages/by-customer/{customerId}")]
-        public async Task<IActionResult> GetMessagesByCustomer([FromServices] AppDbContext dbContext, string customerId)
+        public async Task<IActionResult> GetMessagesByCustomer(
+        [FromServices] AppDbContext dbContext,
+        string customerId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
         {
+            int skip = (page - 1) * pageSize;
+
             var messages = await dbContext.Messages
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
+                .Skip(skip)
+                .Take(pageSize)
                 .Include(m => m.Sender)
                 .Select(m => new MessageViewModel
                 {
@@ -96,6 +104,7 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderAvatar = m.Sender.AvatarUrl
                 })
                 .ToListAsync();
+
             return Ok(messages);
         }
 

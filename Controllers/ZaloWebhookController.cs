@@ -85,11 +85,20 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpGet("messages/customer/{customerId}")]
-        public async Task<IActionResult> GetMessagesByCustomer([FromServices] ZaloDbContext dbContext, string customerId)
+        public async Task<IActionResult> GetMessagesByCustomer(
+        [FromServices] ZaloDbContext dbContext,
+        string customerId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
         {
+            // Tính toán offset
+            int skip = (page - 1) * pageSize;
+
             var messages = await dbContext.ZaloMessages
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
+                .Skip(skip)
+                .Take(pageSize)
                 .Include(m => m.Sender)
                 .Include(m => m.Recipient)
                 .Select(m => new
@@ -108,6 +117,7 @@ namespace FacebookWebhookServerCore.Controllers
                     StatusTime = m.StatusTime.HasValue ? m.StatusTime.Value.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")) : null
                 })
                 .ToListAsync();
+
             return Ok(messages);
         }
 
