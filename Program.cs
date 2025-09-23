@@ -58,14 +58,13 @@ builder.Services.AddSingleton(sp =>
     return new Cloudinary(account);
 });
 
-// Đăng ký DbContext cho Facebook
+// Đăng ký DbContext cho Facebook (PostgreSQL)
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Đăng ký DbContext cho Zalo
+// Đăng ký DbContext cho Zalo (PostgreSQL)
 builder.Services.AddDbContext<ZaloDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("ZaloConnection") ??
-                     "Data Source=zalo.db"));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<ZaloAuthService>();
 
@@ -105,8 +104,8 @@ using (var scope = app.Services.CreateScope())
     zaloAuthService.EnsureTokenInitializedAsync().GetAwaiter().GetResult();
 }
 
-    // Kiểm tra thư mục wwwroot
-    var webRoot = app.Environment.WebRootPath;
+// Kiểm tra thư mục wwwroot
+var webRoot = app.Environment.WebRootPath;
 Console.WriteLine($"WebRootPath: {webRoot}");
 if (Directory.Exists(webRoot))
 {
