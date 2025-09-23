@@ -93,11 +93,11 @@ using (var scope = app.Services.CreateScope())
 {
     // Áp dụng migration cho DB của Facebook
     var facebookDb = scope.ServiceProvider.GetRequiredService<FBDbContext>();
-    facebookDb.Database.Migrate();
+    //facebookDb.Database.Migrate();
 
     // Áp dụng migration cho DB của Zalo
     var zaloDb = scope.ServiceProvider.GetRequiredService<ZaloDbContext>();
-    zaloDb.Database.Migrate();
+    //zaloDb.Database.Migrate();
 
     // Khởi tạo token Zalo từ appsettings.json nếu chưa có trong DB
     var zaloAuthService = scope.ServiceProvider.GetRequiredService<ZaloAuthService>();
