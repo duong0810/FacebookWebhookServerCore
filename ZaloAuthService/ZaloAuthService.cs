@@ -44,7 +44,7 @@ namespace Webhook_Message.Services
                     accessToken = newToken.AccessToken;
                     tokenInfo.AccessToken = accessToken;
                     tokenInfo.RefreshToken = newToken.RefreshToken;
-                    tokenInfo.ExpireAt = newToken.ExpireAt;
+                    tokenInfo.ExpireAt = newToken.ExpireAt.ToUniversalTime();
                     await _dbContext.SaveChangesAsync();
                     Console.WriteLine("Refresh token thành công.");
                 }
@@ -54,7 +54,7 @@ namespace Webhook_Message.Services
                     var accessTokenConfig = _configuration["ZaloOA:AccessToken"];
                     var refreshTokenConfig = _configuration["ZaloOA:RefreshToken"];
                     var expireAtStr = _configuration["ZaloOA:ExpiredTime"];
-                    DateTime expireAtConfig = DateTime.TryParse(expireAtStr, out var dt) ? dt : DateTime.UtcNow.AddHours(1);
+                    DateTime expireAtConfig = DateTime.TryParse(expireAtStr, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow.AddHours(1);
 
                     if (!string.IsNullOrEmpty(accessTokenConfig) && expireAtConfig > DateTime.UtcNow.AddMinutes(5))
                     {
@@ -81,7 +81,7 @@ namespace Webhook_Message.Services
                     {
                         AccessToken = accessToken,
                         RefreshToken = newToken.RefreshToken,
-                        ExpireAt = newToken.ExpireAt
+                        ExpireAt = newToken.ExpireAt.ToUniversalTime()
                     };
                     _dbContext.ZaloTokens.RemoveRange(_dbContext.ZaloTokens);
                     _dbContext.ZaloTokens.Add(newTokenInfo);
@@ -162,7 +162,7 @@ namespace Webhook_Message.Services
                 var accessToken = _configuration["ZaloOA:AccessToken"];
                 var refreshToken = _configuration["ZaloOA:RefreshToken"];
                 var expireAtStr = _configuration["ZaloOA:ExpiredTime"];
-                DateTime expireAt = DateTime.TryParse(expireAtStr, out var dt) ? dt : DateTime.UtcNow.AddHours(1);
+                DateTime expireAt = DateTime.TryParse(expireAtStr, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow.AddHours(1);
 
                 if (!string.IsNullOrEmpty(accessToken) && !string.IsNullOrEmpty(refreshToken))
                 {
