@@ -57,7 +57,7 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpGet("messages")]
-        public async Task<IActionResult> GetMessages([FromServices] AppDbContext dbContext)
+        public async Task<IActionResult> GetMessages([FromServices] FBDbContext dbContext)
         {
             var messages = await dbContext.Messages
                 .OrderByDescending(m => m.Time)
@@ -78,7 +78,7 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpGet("messages/by-customer/{customerId}")]
-        public async Task<IActionResult> GetMessagesByCustomer([FromServices] AppDbContext dbContext, string customerId)
+        public async Task<IActionResult> GetMessagesByCustomer([FromServices] FBDbContext dbContext, string customerId)
         {
             var messages = await dbContext.Messages
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
@@ -100,7 +100,7 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Post([FromServices] AppDbContext dbContext)
+        public async Task<IActionResult> Post([FromServices] FBDbContext dbContext)
         {
             try
             {
@@ -173,7 +173,7 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpPost("send-message")]
-        public async Task<IActionResult> SendMessage([FromServices] AppDbContext dbContext, [FromBody] MessageRequest request)
+        public async Task<IActionResult> SendMessage([FromServices] FBDbContext dbContext, [FromBody] MessageRequest request)
         {
             try
             {
@@ -241,7 +241,7 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpPost("send-attachment")]
-        public async Task<IActionResult> SendAttachment([FromServices] AppDbContext dbContext, [FromForm] string recipientId, [FromForm] IFormFile file)
+        public async Task<IActionResult> SendAttachment([FromServices] FBDbContext dbContext, [FromForm] string recipientId, [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
@@ -316,7 +316,7 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
 
-        private async Task<Customer> GetOrCreateCustomerAsync(AppDbContext dbContext, string senderId)
+        private async Task<Customer> GetOrCreateCustomerAsync(FBDbContext dbContext, string senderId)
         {
             var customer = await dbContext.Customers.FindAsync(senderId);
 
