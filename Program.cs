@@ -59,7 +59,7 @@ builder.Services.AddSingleton(sp =>
 });
 
 // Đăng ký DbContext cho Facebook (PostgreSQL)
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddDbContext<FBDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Đăng ký DbContext cho Zalo (PostgreSQL)
@@ -92,7 +92,7 @@ app.MapHub<ChatHub>("/chatHub");
 using (var scope = app.Services.CreateScope())
 {
     // Áp dụng migration cho DB của Facebook
-    var facebookDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var facebookDb = scope.ServiceProvider.GetRequiredService<FBDbContext>();
     facebookDb.Database.Migrate();
 
     // Áp dụng migration cho DB của Zalo
