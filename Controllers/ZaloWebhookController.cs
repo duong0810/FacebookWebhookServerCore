@@ -64,6 +64,24 @@ namespace FacebookWebhookServerCore.Controllers
             await zaloAuthService.EnsureTokenInitializedAsync();
             return Ok("Đã khởi tạo token từ appsettings.json vào DB.");
         }
+        [HttpPut("update-token")]
+        public async Task<IActionResult> UpdateToken([FromServices] ZaloDbContext dbContext, [FromBody] ZaloTokenInfo model)
+        {
+            var tokenInfo = await dbContext.ZaloTokens.FirstOrDefaultAsync();
+            if (tokenInfo == null)
+            {
+                dbContext.ZaloTokens.Add(model);
+            }
+            else
+            {
+                tokenInfo.AccessToken = model.AccessToken;
+                tokenInfo.RefreshToken = model.RefreshToken;
+                tokenInfo.ExpireAt = model.ExpireAt;
+                dbContext.ZaloTokens.Update(tokenInfo);
+            }
+            await dbContext.SaveChangesAsync();
+            return Ok("Đã cập nhật token vào DB.");
+        }
         [HttpGet("check-token")]
         public async Task<IActionResult> CheckToken([FromServices] ZaloDbContext dbContext)
         {
