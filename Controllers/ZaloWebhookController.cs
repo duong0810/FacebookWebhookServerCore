@@ -269,9 +269,9 @@ namespace FacebookWebhookServerCore.Controllers
 
         [HttpPost("send-attachment")]
         public async Task<IActionResult> SendAttachment(
-    [FromServices] ZaloDbContext dbContext,
-    [FromForm] string recipientId,
-    [FromForm] IFormFile file)
+            [FromServices] ZaloDbContext dbContext,
+            [FromForm] string recipientId,
+            [FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0) return BadRequest("File is empty.");
 
@@ -770,9 +770,111 @@ namespace FacebookWebhookServerCore.Controllers
         }
         private async Task ProcessSendMessageConfirmation(ZaloDbContext dbContext, JsonElement data)
         {
-            // Implement logic if needed for delivery confirmation
+            var recipientId = data.GetProperty("recipient").GetProperty("id").GetString();
+            var timestampStr = data.GetProperty("timestamp").GetString();
+            var timestampLong = long.Parse(timestampStr);
+            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
+
+            var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
+            var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
+
+            // Xác định loại message
+            if (data.GetProperty("message").TryGetProperty("text", out var textElement))
+            {
+                // Xử lý tin nhắn text
+                var message = textElement.GetString();
+
+                var zaloMessage = new ZaloMessage
+                {
+                    SenderId = _oaId,
+                    RecipientId = recipientId,
+                    Content = message,
+                    Time = timestamp,
+                    Direction = "outbound",
+                    Status = "sent"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
+
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = oaCustomer.Name,
+                    SenderAvatar = oaCustomer.AvatarUrl,
+                    IsImage = false,
+                    IsFile = false
+                });
+            }
+            else if (data.GetProperty("message").TryGetProperty("attachments", out var attachmentsElement))
+            {
+                foreach (var attachment in attachmentsElement.EnumerateArray())
+                {
+                    var payload = attachment.GetProperty("payload");
+                    var type = attachment.GetProperty("type").GetString();
+
+                    if (type == "image")
+                    {
+                        // Zalo không trả url khi OA gửi, chỉ có attachment_id
+                        var attachmentId = payload.TryGetProperty("attachment_id", out var attachmentIdElement)
+                            ? attachmentIdElement.GetString()
+                            : "";
+
+                        var zaloMessage = new ZaloMessage
+                        {
+                            SenderId = _oaId,
+                            RecipientId = recipientId,
+                            Content = attachmentId, // Lưu attachment_id
+                            Time = timestamp,
+                            Direction = "outbound",
+                            Status = "sent"
+                        };
+                        dbContext.ZaloMessages.Add(zaloMessage);
+                        await dbContext.SaveChangesAsync();
+
+                        await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                        {
+                            Id = zaloMessage.Id,
+                            SenderId = zaloMessage.SenderId,
+                            RecipientId = zaloMessage.RecipientId,
+                            Content = zaloMessage.Content,
+                            Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                            Direction = zaloMessage.Direction,
+                            SenderName = oaCustomer.Name,
+                            SenderAvatar = oaCustomer.AvatarUrl,
+                            IsImage = true,
+                            IsFile = false
+                        });
+                    }
+                    else if (type == "file")
+                    {
+                        // Zalo trả về url, name, type
+                        var fileUrl = payload.GetProperty("url").GetString();
+                        var fileName = payload.GetProperty("name").GetString();
+                        var fileType = payload.GetProperty("type").GetString();
+
+                        // KHÔNG lưu vào DB (theo logic cũ), chỉ gửi về FE
+                        await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                        {
+                            SenderId = _oaId,
+                            RecipientId = recipientId,
+                            Content = fileUrl,
+                            FileName = fileName,
+                            FileType = fileType,
+                            Time = timestamp.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                            Direction = "outbound",
+                            SenderName = oaCustomer.Name,
+                            SenderAvatar = oaCustomer.AvatarUrl,
+                            IsImage = false,
+                            IsFile = true
+                        });
+                    }
+                }
+            }
         }
-
-
     }
 }   
