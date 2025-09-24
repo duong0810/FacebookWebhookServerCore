@@ -162,6 +162,9 @@ namespace FacebookWebhookServerCore.Controllers
                         case "user_send_text":
                             await ProcessTextMessage(dbContext, root);
                             break;
+                        case "oa_send_text":
+                            await ProcessSendMessageConfirmation(dbContext, root);
+                            break;
                         case "oa_send_message":
                             await ProcessSendMessageConfirmation(dbContext, root);
                             break;
@@ -746,13 +749,17 @@ namespace FacebookWebhookServerCore.Controllers
         }
         private async Task ProcessMessageStatus(ZaloDbContext dbContext, JsonElement data, string status)
         {
-            // Giả sử webhook trả về message_id và timestamp
-            var messageId = data.GetProperty("message_id").GetInt32();
+            // Lấy msg_id từ webhook
+            var msgId = data.GetProperty("message").GetProperty("msg_id").GetString();
             var timestampStr = data.GetProperty("timestamp").GetString();
             var timestampLong = long.Parse(timestampStr);
             var statusTime = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
-            var zaloMessage = await dbContext.ZaloMessages.FindAsync(messageId);
+            // Tìm tin nhắn theo Content chứa msg_id (hoặc sửa lại cho đúng nếu bạn lưu msg_id ở trường khác)
+            var zaloMessage = await dbContext.ZaloMessages
+                .OrderByDescending(z => z.Time)
+                .FirstOrDefaultAsync(z => z.Content == msgId);
+
             if (zaloMessage != null)
             {
                 zaloMessage.Status = status;
