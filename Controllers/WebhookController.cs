@@ -178,7 +178,23 @@ namespace FacebookWebhookServerCore.Controllers
                 else if (messageElement.TryGetProperty("attachments", out var attachmentsElement))
                 {
                     var firstAttachment = attachmentsElement[0];
-                    content = firstAttachment.GetProperty("payload").GetProperty("url").GetString();
+                    // Nếu là sticker (nút like)
+                    if (firstAttachment.TryGetProperty("type", out var typeElement)
+                        && typeElement.GetString() == "image"
+                        && firstAttachment.TryGetProperty("payload", out var payloadElement)
+                        && payloadElement.TryGetProperty("sticker_id", out var stickerIdElement))
+                    {
+                        content = "[Đã gửi like 👍]";
+                    }
+                    else if (firstAttachment.TryGetProperty("payload", out var payloadElement2)
+                        && payloadElement2.TryGetProperty("url", out var urlElement))
+                    {
+                        content = urlElement.GetString();
+                    }
+                    else
+                    {
+                        content = "[Unsupported attachment]";
+                    }
                 }
                 else
                 {

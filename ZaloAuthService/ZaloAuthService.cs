@@ -88,31 +88,30 @@ namespace Webhook_Message.Services
             var appSecret = _configuration["ZaloApp:AppSecret"];
 
             if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret))
-                throw new Exception("AppId hoặc AppSecret bị thiếu trong cấu hình. Vui lòng kiểm tra appsettings.json.");
+                throw new Exception("AppId hoặc AppSecret bị thiếu trong cấu hình.");
 
-            var content = new FormUrlEncodedContent(new[]
+            var client = _httpClient;
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("secret_key", appSecret);
+
+            var data = new[]
             {
-                new KeyValuePair<string, string>("refresh_token", refreshToken),
-                new KeyValuePair<string, string>("app_id", appId),
-                new KeyValuePair<string, string>("grant_type", "refresh_token"),
-            });
+        new KeyValuePair<string, string>("refresh_token", refreshToken),
+        new KeyValuePair<string, string>("app_id", appId),
+        new KeyValuePair<string, string>("grant_type", "refresh_token"),
+    };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth.zaloapp.com/v4/oa/access_token")
-            {
-                Content = content
-            };
-            request.Headers.Add("secret_key", appSecret);
-
-            var response = await _httpClient.SendAsync(request);
+            var response = await client.PostAsync(
+                "https://oauth.zaloapp.com/v4/oa/access_token",
+                new FormUrlEncodedContent(data)
+            );
             var json = await response.Content.ReadAsStringAsync();
 
             Console.WriteLine($"[Zalo Refresh] Request: refresh_token={refreshToken}, app_id={appId}");
             Console.WriteLine($"[Zalo Refresh] Response: {json}");
 
             if (!response.IsSuccessStatusCode)
-            {
                 throw new Exception($"Zalo API refresh failed: {json}");
-            }
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
@@ -131,7 +130,6 @@ namespace Webhook_Message.Services
             var newRefreshToken = root.TryGetProperty("refresh_token", out var nrt) ? nrt.GetString() : null;
             var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
 
-            // Lưu refresh token mới (nếu có)
             return new ZaloTokenInfo
             {
                 AccessToken = accessToken,
