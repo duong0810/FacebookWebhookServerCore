@@ -50,31 +50,15 @@ namespace Webhook_Message.Services
                 }
                 else
                 {
-                    // Lấy từ cấu hình OA nếu chưa có trong DB
-                    var accessTokenConfig = _configuration["ZaloOA:AccessToken"];
-                    var refreshTokenConfig = _configuration["ZaloOA:RefreshToken"];
-                    var expireAtStr = _configuration["ZaloOA:ExpiredTime"];
-                    DateTime expireAtConfig = DateTime.TryParse(expireAtStr, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow.AddHours(1);
-
-                    if (!string.IsNullOrEmpty(accessTokenConfig) && expireAtConfig > DateTime.UtcNow.AddMinutes(5))
+                    // Lấy refresh token từ cấu hình ZaloApp nếu chưa có trong DB
+                    var refreshTokenConfig = _configuration["ZaloApp:RefreshToken"];
+                    if (string.IsNullOrEmpty(refreshTokenConfig))
                     {
-                        Console.WriteLine("Dùng access token từ cấu hình OA.");
-                        // Lưu vào DB nếu chưa có
-                        if (tokenInfo == null)
-                        {
-                            _dbContext.ZaloTokens.Add(new ZaloTokenInfo
-                            {
-                                AccessToken = accessTokenConfig,
-                                RefreshToken = refreshTokenConfig,
-                                ExpireAt = expireAtConfig
-                            });
-                            await _dbContext.SaveChangesAsync();
-                        }
-                        return accessTokenConfig;
+                        Console.WriteLine("Thiếu RefreshToken trong ZaloApp section của appsettings.json.");
+                        throw new Exception("Thiếu RefreshToken trong ZaloApp section của appsettings.json.");
                     }
 
-                    // Nếu token cấu hình cũng hết hạn, refresh bằng refresh token OA
-                    Console.WriteLine("Token cấu hình hết hạn, đang refresh token OA...");
+                    Console.WriteLine("Token DB chưa có, đang refresh token từ cấu hình ZaloApp...");
                     var newToken = await RefreshAccessTokenAsync(refreshTokenConfig);
                     accessToken = newToken.AccessToken;
                     var newTokenInfo = new ZaloTokenInfo
@@ -108,9 +92,9 @@ namespace Webhook_Message.Services
 
             var content = new FormUrlEncodedContent(new[]
             {
+                new KeyValuePair<string, string>("refresh_token", refreshToken),
                 new KeyValuePair<string, string>("app_id", appId),
                 new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
             });
 
             var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth.zaloapp.com/v4/oa/access_token")
@@ -120,15 +104,16 @@ namespace Webhook_Message.Services
             request.Headers.Add("secret_key", appSecret);
 
             var response = await _httpClient.SendAsync(request);
+            var json = await response.Content.ReadAsStringAsync();
+
+            Console.WriteLine($"[Zalo Refresh] Request: refresh_token={refreshToken}, app_id={appId}");
+            Console.WriteLine($"[Zalo Refresh] Response: {json}");
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorJson = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"HTTP Error: {response.StatusCode} - Response: {errorJson}");
-                throw new Exception($"Zalo API refresh failed: {errorJson}");
+                throw new Exception($"Zalo API refresh failed: {json}");
             }
 
-            var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
@@ -146,10 +131,11 @@ namespace Webhook_Message.Services
             var newRefreshToken = root.TryGetProperty("refresh_token", out var nrt) ? nrt.GetString() : null;
             var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
 
+            // Lưu refresh token mới (nếu có)
             return new ZaloTokenInfo
             {
                 AccessToken = accessToken,
-                RefreshToken = newRefreshToken,
+                RefreshToken = newRefreshToken ?? refreshToken,
                 ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 300)
             };
         }
@@ -159,26 +145,22 @@ namespace Webhook_Message.Services
             var tokenInfo = await _dbContext.ZaloTokens.FirstOrDefaultAsync();
             if (tokenInfo == null)
             {
-                var accessToken = _configuration["ZaloOA:AccessToken"];
-                var refreshToken = _configuration["ZaloOA:RefreshToken"];
-                var expireAtStr = _configuration["ZaloOA:ExpiredTime"];
-                DateTime expireAt = DateTime.TryParse(expireAtStr, out var dt) ? dt.ToUniversalTime() : DateTime.UtcNow.AddHours(1);
+                var refreshToken = _configuration["ZaloApp:RefreshToken"];
+                if (string.IsNullOrEmpty(refreshToken))
+                {
+                    Console.WriteLine("Thiếu RefreshToken trong ZaloApp section của appsettings.json.");
+                    return;
+                }
 
-                if (!string.IsNullOrEmpty(accessToken) && !string.IsNullOrEmpty(refreshToken))
+                var newToken = await RefreshAccessTokenAsync(refreshToken);
+                _dbContext.ZaloTokens.Add(new ZaloTokenInfo
                 {
-                    _dbContext.ZaloTokens.Add(new ZaloTokenInfo
-                    {
-                        AccessToken = accessToken,
-                        RefreshToken = refreshToken,
-                        ExpireAt = expireAt
-                    });
-                    await _dbContext.SaveChangesAsync();
-                    Console.WriteLine("Khởi tạo token từ cấu hình appsettings.json thành công.");
-                }
-                else
-                {
-                    Console.WriteLine("Thiếu AccessToken hoặc RefreshToken trong appsettings.json.");
-                }
+                    AccessToken = newToken.AccessToken,
+                    RefreshToken = newToken.RefreshToken,
+                    ExpireAt = newToken.ExpireAt
+                });
+                await _dbContext.SaveChangesAsync();
+                Console.WriteLine("Khởi tạo token từ cấu hình appsettings.json thành công.");
             }
         }
 
