@@ -12,6 +12,8 @@ using FacebookWebhookServerCore.Hubs;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace FacebookWebhookServerCore.Controllers
 {
@@ -97,6 +99,52 @@ namespace FacebookWebhookServerCore.Controllers
                 })
                 .ToListAsync();
             return Ok(messages);
+        }
+
+        [HttpGet("customers/search")]
+        public async Task<IActionResult> SearchCustomers([FromServices] FBDbContext dbContext, [FromQuery] string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return BadRequest("Vui lòng nhập tên cần tìm.");
+
+            // Chuẩn hóa từ khóa tìm kiếm
+            string normalizedKeyword = RemoveDiacritics(name).ToLowerInvariant();
+
+            // Lấy toàn bộ khách hàng (nếu dữ liệu lớn, nên phân trang)
+            var customers = await dbContext.Customers.ToListAsync();
+
+            var result = customers
+                .Where(c => !string.IsNullOrEmpty(c.Name) &&
+                            RemoveDiacritics(c.Name).ToLowerInvariant().Contains(normalizedKeyword))
+                .Select(c => new
+                {
+                    c.FacebookId,
+                    c.Name,
+                    c.AvatarUrl
+                })
+                .ToList();
+
+            return Ok(result);
+        }
+
+        // Hàm loại bỏ dấu tiếng Việt
+        private static string RemoveDiacritics(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return text;
+
+            var normalized = text.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder();
+
+            foreach (var c in normalized)
+            {
+                var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (unicodeCategory != UnicodeCategory.NonSpacingMark)
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString().Normalize(NormalizationForm.FormC);
         }
 
         [HttpPost]
@@ -370,6 +418,7 @@ namespace FacebookWebhookServerCore.Controllers
             }
             return customer;
         }
+
 
         private async Task<string> UploadToCloudinaryAsync(IFormFile file)
         {
