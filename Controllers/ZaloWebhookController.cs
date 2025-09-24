@@ -672,9 +672,6 @@ namespace FacebookWebhookServerCore.Controllers
             var timestampLong = long.Parse(timestampStr);
             var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
-            var msgId = data.GetProperty("message").GetProperty("msg_id").GetString();
-
-
             var attachments = data.GetProperty("message").GetProperty("attachments");
             var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
             var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
@@ -694,8 +691,7 @@ namespace FacebookWebhookServerCore.Controllers
                     Content = attachmentId, // Lưu attachment_id thay vì url
                     Time = timestamp,
                     Direction = "outbound",
-                    Status = "sent",
-                    MsgId = msgId
+                    Status = "sent"
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
@@ -762,7 +758,7 @@ namespace FacebookWebhookServerCore.Controllers
             // Tìm tin nhắn theo Content chứa msg_id (hoặc sửa lại cho đúng nếu bạn lưu msg_id ở trường khác)
             var zaloMessage = await dbContext.ZaloMessages
                 .OrderByDescending(z => z.Time)
-                .FirstOrDefaultAsync(z => z.MsgId == msgId);
+                .FirstOrDefaultAsync(z => z.Content == msgId);
 
             if (zaloMessage != null)
             {
@@ -786,9 +782,6 @@ namespace FacebookWebhookServerCore.Controllers
             var timestampLong = long.Parse(timestampStr);
             var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampLong).UtcDateTime;
 
-            var msgId = data.GetProperty("message").GetProperty("msg_id").GetString();
-
-
             var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
             var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
@@ -805,8 +798,7 @@ namespace FacebookWebhookServerCore.Controllers
                     Content = message,
                     Time = timestamp,
                     Direction = "outbound",
-                    Status = "sent",
-                    MsgId = msgId
+                    Status = "sent"
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
