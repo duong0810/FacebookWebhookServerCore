@@ -251,30 +251,30 @@ namespace FacebookWebhookServerCore.Controllers
                 {
                     var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                    var zaloMessage = new ZaloMessage
-                    {
-                        SenderId = _oaId,
-                        RecipientId = request.RecipientId,
-                        Content = request.Message,
-                        Time = DateTime.UtcNow,
-                        Direction = "outbound",
-                        Status = "sent"
+                    //var zaloMessage = new ZaloMessage
+                    //{
+                    //    SenderId = _oaId,
+                    //    RecipientId = request.RecipientId,
+                    //    Content = request.Message,
+                    //    Time = DateTime.UtcNow,
+                    //    Direction = "outbound",
+                    //    Status = "sent"
 
-                    };
-                    dbContext.ZaloMessages.Add(zaloMessage);
-                    await dbContext.SaveChangesAsync();
+                    //};
+                    //dbContext.ZaloMessages.Add(zaloMessage);
+                    //await dbContext.SaveChangesAsync();
 
-                    await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                    {
-                        Id = zaloMessage.Id,
-                        SenderId = zaloMessage.SenderId,
-                        RecipientId = zaloMessage.RecipientId,
-                        Content = zaloMessage.Content,
-                        Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                        Direction = zaloMessage.Direction,
-                        SenderName = oaAsCustomer.Name,
-                        SenderAvatar = oaAsCustomer.AvatarUrl
-                    });
+                    //await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                    //{
+                    //    Id = zaloMessage.Id,
+                    //    SenderId = zaloMessage.SenderId,
+                    //    RecipientId = zaloMessage.RecipientId,
+                    //    Content = zaloMessage.Content,
+                    //    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    //    Direction = zaloMessage.Direction,
+                    //    SenderName = oaAsCustomer.Name,
+                    //    SenderAvatar = oaAsCustomer.AvatarUrl
+                    //});
 
                     return Ok(new { status = "success", details = responseContent });
                 }
@@ -420,33 +420,33 @@ namespace FacebookWebhookServerCore.Controllers
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
                 // Chỉ lưu link Cloudinary vào DB
-                var zaloMessage = new ZaloMessage
-                {
-                    SenderId = _oaId,
-                    RecipientId = recipientId,
-                    Content = contentForDb,
-                    Time = DateTime.UtcNow,
-                    Direction = "outbound",
-                    Status = "sent"
+                //var zaloMessage = new ZaloMessage
+                //{
+                //    SenderId = _oaId,
+                //    RecipientId = recipientId,
+                //    Content = contentForDb,
+                //    Time = DateTime.UtcNow,
+                //    Direction = "outbound",
+                //    Status = "sent"
 
-                };
-                dbContext.ZaloMessages.Add(zaloMessage);
-                await dbContext.SaveChangesAsync();
+                //};
+                //dbContext.ZaloMessages.Add(zaloMessage);
+                //await dbContext.SaveChangesAsync();
 
-                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                {
-                    Id = zaloMessage.Id,
-                    SenderId = zaloMessage.SenderId,
-                    RecipientId = zaloMessage.RecipientId,
-                    Content = zaloMessage.Content,
-                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                    Direction = zaloMessage.Direction,
-                    SenderName = oaAsCustomer.Name,
-                    SenderAvatar = oaAsCustomer.AvatarUrl,
-                    FileType = file.ContentType,
-                    IsImage = fileType.StartsWith("image/"),
-                    IsFile = !fileType.StartsWith("image/")
-                });
+                //await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                //{
+                //    Id = zaloMessage.Id,
+                //    SenderId = zaloMessage.SenderId,
+                //    RecipientId = zaloMessage.RecipientId,
+                //    Content = zaloMessage.Content,
+                //    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                //    Direction = zaloMessage.Direction,
+                //    SenderName = oaAsCustomer.Name,
+                //    SenderAvatar = oaAsCustomer.AvatarUrl,
+                //    FileType = file.ContentType,
+                //    IsImage = fileType.StartsWith("image/"),
+                //    IsFile = !fileType.StartsWith("image/")
+                //});
 
                 return Ok(new { status = "success", url = contentForDb });
             }
