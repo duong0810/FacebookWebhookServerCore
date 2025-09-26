@@ -40,26 +40,17 @@ namespace Webhook_Message.Services
                 if (tokenInfo != null && !string.IsNullOrEmpty(tokenInfo.RefreshToken))
                 {
                     Console.WriteLine("Token hết hạn, đang refresh token...");
-                    try
-                    {
-                        var newToken = await RefreshAccessTokenAsync(tokenInfo.RefreshToken);
-                        accessToken = newToken.AccessToken;
-                        tokenInfo.AccessToken = accessToken;
-                        tokenInfo.RefreshToken = newToken.RefreshToken;
-                        tokenInfo.ExpireAt = newToken.ExpireAt.ToUniversalTime();
-                        await _dbContext.SaveChangesAsync();
-                        Console.WriteLine("Refresh token thành công.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("Refresh token thất bại, xóa token cũ khỏi DB. Lỗi: " + ex.Message);
-                        _dbContext.ZaloTokens.Remove(tokenInfo);
-                        await _dbContext.SaveChangesAsync();
-                        throw;
-                    }
+                    var newToken = await RefreshAccessTokenAsync(tokenInfo.RefreshToken);
+                    accessToken = newToken.AccessToken;
+                    tokenInfo.AccessToken = accessToken;
+                    tokenInfo.RefreshToken = newToken.RefreshToken;
+                    tokenInfo.ExpireAt = newToken.ExpireAt.ToUniversalTime();
+                    await _dbContext.SaveChangesAsync();
+                    Console.WriteLine("Refresh token thành công.");
                 }
                 else
                 {
+                    // Lấy refresh token từ cấu hình ZaloApp nếu chưa có trong DB
                     var refreshTokenConfig = _configuration["ZaloApp:RefreshToken"];
                     if (string.IsNullOrEmpty(refreshTokenConfig))
                     {
@@ -100,17 +91,15 @@ namespace Webhook_Message.Services
                 throw new Exception("AppId hoặc AppSecret bị thiếu trong cấu hình.");
 
             var client = _httpClient;
-            // Đảm bảo không bị trùng header
-            if (client.DefaultRequestHeaders.Contains("secret_key"))
-                client.DefaultRequestHeaders.Remove("secret_key");
+            client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("secret_key", appSecret);
 
             var data = new[]
             {
-                new KeyValuePair<string, string>("refresh_token", refreshToken),
-                new KeyValuePair<string, string>("app_id", appId),
-                new KeyValuePair<string, string>("grant_type", "refresh_token"),
-            };
+        new KeyValuePair<string, string>("refresh_token", refreshToken),
+        new KeyValuePair<string, string>("app_id", appId),
+        new KeyValuePair<string, string>("grant_type", "refresh_token"),
+    };
 
             var response = await client.PostAsync(
                 "https://oauth.zaloapp.com/v4/oa/access_token",
@@ -121,11 +110,13 @@ namespace Webhook_Message.Services
             Console.WriteLine($"[Zalo Refresh] Request: refresh_token={refreshToken}, app_id={appId}");
             Console.WriteLine($"[Zalo Refresh] Response: {json}");
 
+            if (!response.IsSuccessStatusCode)
+                throw new Exception($"Zalo API refresh failed: {json}");
+
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // Chỉ throw nếu error khác 0
-            if (root.TryGetProperty("error", out var errorElem) && errorElem.GetInt32() != 0)
+            if (root.TryGetProperty("error", out var errorElem) && errorElem.ValueKind != JsonValueKind.Null)
             {
                 var errorName = root.TryGetProperty("error_name", out var en) ? en.GetString() : "Unknown";
                 var errorDesc = root.TryGetProperty("error_description", out var ed) ? ed.GetString() : "";
@@ -136,25 +127,13 @@ namespace Webhook_Message.Services
                 throw new Exception($"Zalo API không trả về access_token khi refresh. Response: {json}");
 
             var accessToken = accessTokenElem.GetString();
-            var newRefreshToken = root.TryGetProperty("refresh_token", out var nrt) && !string.IsNullOrEmpty(nrt.GetString()) ? nrt.GetString() : refreshToken;
-
-            int expiresIn = 3600;
-            if (root.TryGetProperty("expires_in", out var ei))
-            {
-                if (ei.ValueKind == JsonValueKind.String)
-                {
-                    int.TryParse(ei.GetString(), out expiresIn);
-                }
-                else if (ei.ValueKind == JsonValueKind.Number)
-                {
-                    expiresIn = ei.GetInt32();
-                }
-            }
+            var newRefreshToken = root.TryGetProperty("refresh_token", out var nrt) ? nrt.GetString() : null;
+            var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
 
             return new ZaloTokenInfo
             {
                 AccessToken = accessToken,
-                RefreshToken = newRefreshToken,
+                RefreshToken = newRefreshToken ?? refreshToken,
                 ExpireAt = DateTime.UtcNow.AddSeconds(expiresIn - 300)
             };
         }
