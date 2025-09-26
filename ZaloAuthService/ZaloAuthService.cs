@@ -37,6 +37,7 @@ namespace Webhook_Message.Services
                 }
 
                 string accessToken;
+                int result = 0;
                 if (tokenInfo != null && !string.IsNullOrEmpty(tokenInfo.RefreshToken))
                 {
                     Console.WriteLine("Token hết hạn, đang refresh token...");
@@ -45,7 +46,8 @@ namespace Webhook_Message.Services
                     tokenInfo.AccessToken = accessToken;
                     tokenInfo.RefreshToken = newToken.RefreshToken;
                     tokenInfo.ExpireAt = newToken.ExpireAt.ToUniversalTime();
-                    await _dbContext.SaveChangesAsync();
+                    result = await _dbContext.SaveChangesAsync();
+                    Console.WriteLine("Rows affected when saving token: " + result);
                     Console.WriteLine("Refresh token thành công.");
                 }
                 else
@@ -69,7 +71,8 @@ namespace Webhook_Message.Services
                     };
                     _dbContext.ZaloTokens.RemoveRange(_dbContext.ZaloTokens);
                     _dbContext.ZaloTokens.Add(newTokenInfo);
-                    await _dbContext.SaveChangesAsync();
+                    result = await _dbContext.SaveChangesAsync();
+                    Console.WriteLine("Rows affected when saving token: " + result);
                     Console.WriteLine("Lưu token mới vào DB thành công.");
                 }
 
@@ -96,10 +99,10 @@ namespace Webhook_Message.Services
 
             var data = new[]
             {
-        new KeyValuePair<string, string>("refresh_token", refreshToken),
-        new KeyValuePair<string, string>("app_id", appId),
-        new KeyValuePair<string, string>("grant_type", "refresh_token"),
-    };
+                new KeyValuePair<string, string>("refresh_token", refreshToken),
+                new KeyValuePair<string, string>("app_id", appId),
+                new KeyValuePair<string, string>("grant_type", "refresh_token"),
+            };
 
             var response = await client.PostAsync(
                 "https://oauth.zaloapp.com/v4/oa/access_token",
@@ -170,7 +173,8 @@ namespace Webhook_Message.Services
                     RefreshToken = newToken.RefreshToken,
                     ExpireAt = newToken.ExpireAt
                 });
-                await _dbContext.SaveChangesAsync();
+                int result = await _dbContext.SaveChangesAsync();
+                Console.WriteLine("Rows affected when saving token: " + result);
                 Console.WriteLine("Khởi tạo token từ cấu hình appsettings.json thành công.");
             }
         }
