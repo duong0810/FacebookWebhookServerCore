@@ -5,7 +5,7 @@ namespace Webhook_Message.Models
     public class Customer
     {
         [Key]
-        public string FacebookId { get; set; } // Dùng Facebook ID làm khóa chính
+        public string FacebookId { get; set; }
 
         public string Name { get; set; }
 

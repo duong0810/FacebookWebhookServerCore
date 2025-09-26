@@ -59,11 +59,10 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpPost("init-token")]
-        public async Task<IActionResult> InitToken([FromServices] ZaloDbContext dbContext, [FromBody] ZaloTokenInfo model)
+        public async Task<IActionResult> InitToken([FromServices] ZaloAuthService zaloAuthService)
         {
-            dbContext.ZaloTokens.Add(model);
-            await dbContext.SaveChangesAsync();
-            return Ok("Đã khởi tạo token vào DB.");
+            await zaloAuthService.EnsureTokenInitializedAsync();
+            return Ok("Đã khởi tạo token từ appsettings.json vào DB.");
         }
         [HttpPut("update-token")]
         public async Task<IActionResult> UpdateToken([FromServices] ZaloDbContext dbContext, [FromBody] ZaloTokenInfo model)
@@ -903,4 +902,4 @@ namespace FacebookWebhookServerCore.Controllers
             }
         }
     }
-}   
+}
