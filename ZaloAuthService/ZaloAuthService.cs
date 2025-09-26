@@ -128,7 +128,20 @@ namespace Webhook_Message.Services
 
             var accessToken = accessTokenElem.GetString();
             var newRefreshToken = root.TryGetProperty("refresh_token", out var nrt) ? nrt.GetString() : null;
-            var expiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600;
+
+            // Sửa đoạn này để lấy expires_in đúng kiểu dữ liệu
+            int expiresIn = 3600;
+            if (root.TryGetProperty("expires_in", out var ei))
+            {
+                if (ei.ValueKind == JsonValueKind.String)
+                {
+                    int.TryParse(ei.GetString(), out expiresIn);
+                }
+                else if (ei.ValueKind == JsonValueKind.Number)
+                {
+                    expiresIn = ei.GetInt32();
+                }
+            }
 
             return new ZaloTokenInfo
             {
