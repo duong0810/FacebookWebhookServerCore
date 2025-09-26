@@ -803,10 +803,23 @@ namespace FacebookWebhookServerCore.Controllers
             var oaCustomer = await EnsureOACustomerExistsAsync(dbContext);
             var recipientCustomer = await GetOrCreateZaloCustomerAsync(dbContext, recipientId);
 
+            // Lấy msg_id từ webhook
+            string msgId = null;
+            if (data.GetProperty("message").TryGetProperty("msg_id", out var msgIdElement))
+                msgId = msgIdElement.GetString();
+
+            // Nếu không có msg_id thì bỏ qua (bảo vệ)
+            if (string.IsNullOrEmpty(msgId))
+                return;
+
+            // Kiểm tra đã có tin nhắn này chưa
+            var existed = await dbContext.ZaloMessages.FirstOrDefaultAsync(m => m.MsgId == msgId);
+            if (existed != null)
+                return; // Đã có thì không lưu nữa
+
             // Xác định loại message
             if (data.GetProperty("message").TryGetProperty("text", out var textElement))
             {
-                // Xử lý tin nhắn text
                 var message = textElement.GetString();
 
                 var zaloMessage = new ZaloMessage
@@ -816,7 +829,8 @@ namespace FacebookWebhookServerCore.Controllers
                     Content = message,
                     Time = timestamp,
                     Direction = "outbound",
-                    Status = "sent"
+                    Status = "sent",
+                    MsgId = msgId
                 };
                 dbContext.ZaloMessages.Add(zaloMessage);
                 await dbContext.SaveChangesAsync();
@@ -844,7 +858,6 @@ namespace FacebookWebhookServerCore.Controllers
 
                     if (type == "image")
                     {
-                        // Zalo không trả url khi OA gửi, chỉ có attachment_id
                         var attachmentId = payload.TryGetProperty("attachment_id", out var attachmentIdElement)
                             ? attachmentIdElement.GetString()
                             : "";
@@ -853,10 +866,11 @@ namespace FacebookWebhookServerCore.Controllers
                         {
                             SenderId = _oaId,
                             RecipientId = recipientId,
-                            Content = attachmentId, // Lưu attachment_id
+                            Content = attachmentId,
                             Time = timestamp,
                             Direction = "outbound",
-                            Status = "sent"
+                            Status = "sent",
+                            MsgId = msgId
                         };
                         dbContext.ZaloMessages.Add(zaloMessage);
                         await dbContext.SaveChangesAsync();
