@@ -156,6 +156,49 @@ namespace FacebookWebhookServerCore.Controllers
             return Ok(new { Name = customer.Name, AvatarUrl = customer.AvatarUrl });
         }
 
+        [HttpGet("messages/customer/{customerId}/lazy")]
+        public async Task<IActionResult> GetMessagesByCustomerLazy(
+    [FromServices] ZaloDbContext dbContext,
+    string customerId,
+    [FromQuery] int pageSize = 20,
+    [FromQuery] DateTime? beforeTime = null)
+        {
+            var query = dbContext.ZaloMessages
+                .Where(m => m.SenderId == customerId || m.RecipientId == customerId);
+
+            if (beforeTime.HasValue)
+            {
+                query = query.Where(m => m.Time < beforeTime.Value);
+            }
+
+            // Gọi OrderByDescending sau cùng trước khi thực hiện truy vấn
+            var orderedQuery = query
+                .OrderByDescending(m => m.Time)
+                .Include(m => m.Sender)
+                .Include(m => m.Recipient);
+
+            var messages = await orderedQuery
+                .Take(pageSize)
+                .Select(m => new
+                {
+                    Id = m.Id,
+                    SenderId = m.SenderId,
+                    RecipientId = m.RecipientId,
+                    Content = m.Content,
+                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")),
+                    Direction = m.Direction,
+                    SenderName = m.Sender != null ? m.Sender.Name : null,
+                    SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
+                    RecipientName = m.Recipient != null ? m.Recipient.Name : null,
+                    RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null,
+                    Status = m.Status == "received" ? "Đã nhận" : m.Status == "seen" ? "Đã xem" : "Đã gửi",
+                    StatusTime = m.StatusTime.HasValue ? m.StatusTime.Value.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")) : null
+                })
+                .ToListAsync();
+
+            return Ok(messages);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Post([FromServices] ZaloDbContext dbContext)
         {
