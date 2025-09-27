@@ -22,6 +22,8 @@ namespace Webhook_Message.Models
         [ForeignKey("RecipientId")]
         public virtual ZaloCustomer? Recipient { get; set; }
         public string? MsgId { get; set; }
+        public string? FileName { get; set; }
+
         [NotMapped]
         public DateTime TimeVietnam
         {
