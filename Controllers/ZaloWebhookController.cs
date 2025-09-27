@@ -465,12 +465,12 @@ namespace FacebookWebhookServerCore.Controllers
 
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                // Sau khi gửi file thành công lên Zalo và Cloudinary
                 var zaloMessage = new ZaloMessage
                 {
                     SenderId = _oaId,
                     RecipientId = recipientId,
-                    Content = contentForDb,
+                    Content = contentForDb, // link Cloudinary
+                    FileName = file.FileName, // tên file gốc
                     Time = DateTime.UtcNow,
                     Direction = "outbound",
                     Status = "sent"
@@ -484,6 +484,7 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderId = zaloMessage.SenderId,
                     RecipientId = zaloMessage.RecipientId,
                     Content = zaloMessage.Content,
+                    FileName = zaloMessage.FileName,
                     Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
                     Direction = zaloMessage.Direction,
                     SenderName = oaAsCustomer.Name,
