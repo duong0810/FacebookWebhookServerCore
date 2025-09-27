@@ -63,6 +63,7 @@ namespace FacebookWebhookServerCore.Controllers
         {
             var messages = await dbContext.Messages
                 .OrderByDescending(m => m.Time)
+                .ThenByDescending(m => m.Id)
                 .Include(m => m.Sender)
                 .Select(m => new MessageViewModel
                 {
@@ -85,6 +86,7 @@ namespace FacebookWebhookServerCore.Controllers
             var messages = await dbContext.Messages
                 .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
                 .OrderByDescending(m => m.Time)
+                .ThenByDescending(m => m.Id)
                 .Include(m => m.Sender)
                 .Select(m => new MessageViewModel
                 {
