@@ -10,6 +10,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Webhook_Message.Data;
@@ -156,48 +157,48 @@ namespace FacebookWebhookServerCore.Controllers
             return Ok(new { Name = customer.Name, AvatarUrl = customer.AvatarUrl });
         }
 
-        [HttpGet("messages/customer/{customerId}/lazy")]
-        public async Task<IActionResult> GetMessagesByCustomerLazy(
-    [FromServices] ZaloDbContext dbContext,
-    string customerId,
-    [FromQuery] int pageSize = 20,
-    [FromQuery] DateTime? beforeTime = null)
-        {
-            var query = dbContext.ZaloMessages
-                .Where(m => m.SenderId == customerId || m.RecipientId == customerId);
+        //[HttpGet("messages/customer/{customerId}/lazy")]
+        //public async Task<IActionResult> GetMessagesByCustomerLazy(
+        //[FromServices] ZaloDbContext dbContext,
+        //string customerId,
+        //[FromQuery] int pageSize = 20,
+        //[FromQuery] DateTime? beforeTime = null)
+        //{
+        //    var query = dbContext.ZaloMessages
+        //        .Where(m => m.SenderId == customerId || m.RecipientId == customerId);
 
-            if (beforeTime.HasValue)
-            {
-                query = query.Where(m => m.Time < beforeTime.Value);
-            }
+        //    if (beforeTime.HasValue)
+        //    {
+        //        query = query.Where(m => m.Time < beforeTime.Value);
+        //    }
 
-            // Gọi OrderByDescending sau cùng trước khi thực hiện truy vấn
-            var orderedQuery = query
-                .OrderByDescending(m => m.Time)
-                .Include(m => m.Sender)
-                .Include(m => m.Recipient);
+        //    // Gọi OrderByDescending sau cùng trước khi thực hiện truy vấn
+        //    var orderedQuery = query
+        //        .OrderByDescending(m => m.Time)
+        //        .Include(m => m.Sender)
+        //        .Include(m => m.Recipient);
 
-            var messages = await orderedQuery
-                .Take(pageSize)
-                .Select(m => new
-                {
-                    Id = m.Id,
-                    SenderId = m.SenderId,
-                    RecipientId = m.RecipientId,
-                    Content = m.Content,
-                    Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")),
-                    Direction = m.Direction,
-                    SenderName = m.Sender != null ? m.Sender.Name : null,
-                    SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
-                    RecipientName = m.Recipient != null ? m.Recipient.Name : null,
-                    RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null,
-                    Status = m.Status == "received" ? "Đã nhận" : m.Status == "seen" ? "Đã xem" : "Đã gửi",
-                    StatusTime = m.StatusTime.HasValue ? m.StatusTime.Value.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")) : null
-                })
-                .ToListAsync();
+        //    var messages = await orderedQuery
+        //        .Take(pageSize)
+        //        .Select(m => new
+        //        {
+        //            Id = m.Id,
+        //            SenderId = m.SenderId,
+        //            RecipientId = m.RecipientId,
+        //            Content = m.Content,
+        //            Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")),
+        //            Direction = m.Direction,
+        //            SenderName = m.Sender != null ? m.Sender.Name : null,
+        //            SenderAvatar = m.Sender != null ? m.Sender.AvatarUrl : null,
+        //            RecipientName = m.Recipient != null ? m.Recipient.Name : null,
+        //            RecipientAvatar = m.Recipient != null ? m.Recipient.AvatarUrl : null,
+        //            Status = m.Status == "received" ? "Đã nhận" : m.Status == "seen" ? "Đã xem" : "Đã gửi",
+        //            StatusTime = m.StatusTime.HasValue ? m.StatusTime.Value.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", new CultureInfo("vi-VN")) : null
+        //        })
+        //        .ToListAsync();
 
-            return Ok(messages);
-        }
+        //    return Ok(messages);
+        //}
 
         [HttpPost]
         public async Task<IActionResult> Post([FromServices] ZaloDbContext dbContext)
@@ -381,9 +382,11 @@ namespace FacebookWebhookServerCore.Controllers
                     else
                         uploadEndpoint = "https://openapi.zalo.me/v2.0/oa/upload/file";
 
+                    // Thay đổi đoạn này trong phương thức SendAttachment
                     using var form = new MultipartFormDataContent();
                     using var fs = file.OpenReadStream();
-                    form.Add(new StreamContent(fs), "file", file.FileName);
+                    var safeFileName = SanitizeFileName(file.FileName);
+                    form.Add(new StreamContent(fs), "file", safeFileName);
 
                     var uploadResponse = await client.PostAsync(uploadEndpoint, form);
                     var uploadJson = await uploadResponse.Content.ReadAsStringAsync();
@@ -462,34 +465,33 @@ namespace FacebookWebhookServerCore.Controllers
 
                 var oaAsCustomer = await EnsureOACustomerExistsAsync(dbContext);
 
-                // Chỉ lưu link Cloudinary vào DB
-                //var zaloMessage = new ZaloMessage
-                //{
-                //    SenderId = _oaId,
-                //    RecipientId = recipientId,
-                //    Content = contentForDb,
-                //    Time = DateTime.UtcNow,
-                //    Direction = "outbound",
-                //    Status = "sent"
+                // Sau khi gửi file thành công lên Zalo và Cloudinary
+                var zaloMessage = new ZaloMessage
+                {
+                    SenderId = _oaId,
+                    RecipientId = recipientId,
+                    Content = contentForDb,
+                    Time = DateTime.UtcNow,
+                    Direction = "outbound",
+                    Status = "sent"
+                };
+                dbContext.ZaloMessages.Add(zaloMessage);
+                await dbContext.SaveChangesAsync();
 
-                //};
-                //dbContext.ZaloMessages.Add(zaloMessage);
-                //await dbContext.SaveChangesAsync();
-
-                //await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
-                //{
-                //    Id = zaloMessage.Id,
-                //    SenderId = zaloMessage.SenderId,
-                //    RecipientId = zaloMessage.RecipientId,
-                //    Content = zaloMessage.Content,
-                //    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-                //    Direction = zaloMessage.Direction,
-                //    SenderName = oaAsCustomer.Name,
-                //    SenderAvatar = oaAsCustomer.AvatarUrl,
-                //    FileType = file.ContentType,
-                //    IsImage = fileType.StartsWith("image/"),
-                //    IsFile = !fileType.StartsWith("image/")
-                //});
+                await _hubContext.Clients.All.SendAsync("ReceiveZaloMessage", new
+                {
+                    Id = zaloMessage.Id,
+                    SenderId = zaloMessage.SenderId,
+                    RecipientId = zaloMessage.RecipientId,
+                    Content = zaloMessage.Content,
+                    Time = zaloMessage.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
+                    Direction = zaloMessage.Direction,
+                    SenderName = oaAsCustomer.Name,
+                    SenderAvatar = oaAsCustomer.AvatarUrl,
+                    FileType = file.ContentType,
+                    IsImage = fileType.StartsWith("image/"),
+                    IsFile = !fileType.StartsWith("image/")
+                });
 
                 return Ok(new { status = "success", url = contentForDb });
             }
@@ -957,6 +959,19 @@ namespace FacebookWebhookServerCore.Controllers
                     }
                 }
             }
+        }
+
+        private string SanitizeFileName(string fileName)
+        {
+            var normalized = fileName.Normalize(NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in normalized)
+            {
+                var uc = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (uc != UnicodeCategory.NonSpacingMark && (char.IsLetterOrDigit(c) || c == '.' || c == '_'))
+                    sb.Append(c);
+            }
+            return sb.ToString().Normalize(NormalizationForm.FormC);
         }
     }
 }
