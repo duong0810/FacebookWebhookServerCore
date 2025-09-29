@@ -81,12 +81,23 @@ namespace FacebookWebhookServerCore.Controllers
         }
 
         [HttpGet("messages/by-customer/{customerId}")]
-        public async Task<IActionResult> GetMessagesByCustomer([FromServices] FBDbContext dbContext, string customerId)
+        public async Task<IActionResult> GetMessagesByCustomer(
+        [FromServices] FBDbContext dbContext,
+        string customerId,
+        [FromQuery] int? lastMessageId = null,
+        [FromQuery] int take = 50)
         {
-            var messages = await dbContext.Messages
-                .Where(m => m.SenderId == customerId || m.RecipientId == customerId)
-                .OrderByDescending(m => m.Time)
-                .ThenByDescending(m => m.Id)
+            var query = dbContext.Messages
+                .Where(m => m.SenderId == customerId || m.RecipientId == customerId);
+
+            if (lastMessageId.HasValue)
+            {
+                query = query.Where(m => m.Id < lastMessageId.Value);
+            }
+
+            var messages = await query
+                .OrderByDescending(m => m.Id)
+                .Take(take)
                 .Include(m => m.Sender)
                 .Select(m => new MessageViewModel
                 {
@@ -100,45 +111,11 @@ namespace FacebookWebhookServerCore.Controllers
                     SenderAvatar = m.Sender.AvatarUrl
                 })
                 .ToListAsync();
+
+            // Không cần đảo ngược, giữ nguyên thứ tự từ mới đến cũ
             return Ok(messages);
         }
 
-        //[HttpGet("messages/by-customer/{customerId}/lazy")]
-        //public async Task<IActionResult> GetMessagesByCustomerLazy(
-        //[FromServices] FBDbContext dbContext,
-        //string customerId,
-        //[FromQuery] int pageSize = 20,
-        //[FromQuery] DateTime? beforeTime = null)
-        //{
-        //    var query = dbContext.Messages
-        //        .Where(m => m.SenderId == customerId || m.RecipientId == customerId);
-
-        //    if (beforeTime.HasValue)
-        //    {
-        //        query = query.Where(m => m.Time < beforeTime.Value);
-        //    }
-
-        //    var orderedQuery = query
-        //        .OrderByDescending(m => m.Time)
-        //        .Include(m => m.Sender);
-
-        //    var messages = await orderedQuery
-        //        .Take(pageSize)
-        //        .Select(m => new MessageViewModel
-        //        {
-        //            Id = m.Id,
-        //            SenderId = m.SenderId,
-        //            RecipientId = m.RecipientId,
-        //            Content = m.Content,
-        //            Time = m.Time.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture),
-        //            Direction = m.Direction,
-        //            SenderName = m.Sender.Name,
-        //            SenderAvatar = m.Sender.AvatarUrl
-        //        })
-        //        .ToListAsync();
-
-        //    return Ok(messages);
-        //}
 
         [HttpGet("customers/search")]
         public async Task<IActionResult> SearchCustomers([FromServices] FBDbContext dbContext, [FromQuery] string name)
